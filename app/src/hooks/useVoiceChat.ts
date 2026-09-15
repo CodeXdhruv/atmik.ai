@@ -22,7 +22,14 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
   const langRef = useRef(lang);
   useEffect(() => {
     langRef.current = lang;
-  }, [lang]);
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'session_init',
+        userId,
+        lang
+      }));
+    }
+  }, [lang, userId]);
 
   const recorder = useAudioRecorder({
     sampleRate: 16000,
@@ -57,6 +64,11 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
       console.log('🗣️ [VoiceChat] WebSocket Connected');
       setIsConnected(true);
       setError(null);
+      ws.send(JSON.stringify({
+        type: 'session_init',
+        userId,
+        lang: langRef.current
+      }));
     };
 
     ws.onmessage = async (event) => {
