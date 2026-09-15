@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, ScrollView, Dimensions, ImageBackground } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Text, ScrollView, Dimensions } from 'react-native';
+import { Image, ImageBackground } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Clock, User } from 'lucide-react-native';

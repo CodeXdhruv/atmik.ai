@@ -1,9 +1,10 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { Image, ImageBackground } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Colors } from '@/constants/theme';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui';
 import { Mail } from 'lucide-react-native';
 
 export default function WelcomeScreen() {
