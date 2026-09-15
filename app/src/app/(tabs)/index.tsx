@@ -1,5 +1,7 @@
+import { Skeleton } from 'moti/skeleton';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ImageBackground, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import { Image, ImageBackground } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -8,21 +10,16 @@ import { Bell, Lightbulb, CheckCircle2, Check, Edit3, Edit2, Heart, ChevronRight
 import { usePracticeStore } from '../../store/usePracticeStore';
 import { apiService } from '../../services/api';
 import * as Linking from 'expo-linking';
-import { RecommendedSection } from '@/components/home/RecommendedSection';
-import { LetItGoCard } from '@/components/home/LetItGoCard';
+import { RecommendedSection, LetItGoCard } from '@/components/home/HomeComponents';
 
 
 const { width } = Dimensions.get('window');
 
-const HeroCarousel = () => {
+const HeroCarousel = ({ quotes }: { quotes: any[] }) => {
   const scrollRef = useRef<ScrollView>(null);
   const [activeIndex, setActiveIndex] = useState(0);
 
-  const quotes = [
-    { id: 1, quote: "To heal the planet,\nwe must heal humanity.", author: "— Dr. Swatantra Jain" },
-    { id: 2, quote: "Peace comes from within.\nDo not seek it without.", author: "— Dr. Swatantra Jain" },
-    { id: 3, quote: "Mindfulness is the key\nto a balanced life.", author: "— Dr. Swatantra Jain" }
-  ];
+  // Quotes passed via props
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -60,7 +57,7 @@ const HeroCarousel = () => {
                     <Text style={styles.heroLabel}>Daily Inspiration</Text>
                     <Lightbulb color={Colors.textPrimary} size={14} style={{ marginLeft: 4 }} />
                   </View>
-                  <Text style={styles.heroQuote}>{item.quote}</Text>
+                  <Text style={styles.heroQuote}>{item.text || item.quote}</Text>
                   <Text style={styles.heroAuthor}>{item.author}</Text>
                 </View>
               </View>
@@ -79,20 +76,53 @@ const HeroCarousel = () => {
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { habits, journalSaved, gratitudes } = usePracticeStore();
+  const { habits, journalSaved, gratitudes, seenQuoteIds, currentDailyQuotes, lastQuoteRefreshDate, setSeenQuoteIds, setCurrentDailyQuotes, setLastQuoteRefreshDate } = usePracticeStore();
   
   const completedHabits = habits.filter(h => h.completed).length;
   const isGratitudeComplete = gratitudes.every(g => g.trim().length > 0);
 
   const [recommendedContent, setRecommendedContent] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
       const data = await apiService.fetchLibraryContent();
       setRecommendedContent(data);
+        setIsLoading(false);
+
+      // Quotes logic
+      const today = new Date().toDateString();
+      if (lastQuoteRefreshDate !== today || currentDailyQuotes.length === 0) {
+        try {
+          const allQuotes = await apiService.fetchQuotesPool();
+          let unseen = allQuotes.filter((q: any) => !seenQuoteIds.includes(q.id));
+          
+          let selectedQuotes = [];
+          if (unseen.length >= 3) {
+            selectedQuotes = unseen.sort(() => 0.5 - Math.random()).slice(0, 3);
+            setSeenQuoteIds([...seenQuoteIds, ...selectedQuotes.map((q: any) => q.id)]);
+          } else if (allQuotes.length >= 3) {
+            // Loop back to beginning
+            selectedQuotes = allQuotes.sort(() => 0.5 - Math.random()).slice(0, 3);
+            setSeenQuoteIds(selectedQuotes.map((q: any) => q.id));
+          } else {
+            // Less than 3 quotes in DB
+            selectedQuotes = allQuotes;
+            setSeenQuoteIds(selectedQuotes.map((q: any) => q.id));
+          }
+
+          if (selectedQuotes.length > 0) {
+            setCurrentDailyQuotes(selectedQuotes);
+            setLastQuoteRefreshDate(today);
+          }
+        } catch (e) {
+          console.error("Failed to load quotes", e);
+        }
+      }
+
     }
     loadData();
-  }, []);
+  }, [lastQuoteRefreshDate, currentDailyQuotes.length]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -116,7 +146,7 @@ export default function HomeScreen() {
         </View>
 
         {/* Daily Inspiration Hero */}
-        <HeroCarousel />
+        <HeroCarousel quotes={currentDailyQuotes.length > 0 ? currentDailyQuotes : [{id:"1", text:"Take a breath", author:"Atmik"}]} />
 
         {/* For You Today */}
         <View style={styles.section}>
@@ -132,7 +162,23 @@ export default function HomeScreen() {
         </View>
 
         {/* Recommended for You */}
-        <RecommendedSection
+        
+        {isLoading && (
+          <View style={{ paddingHorizontal: 22, marginTop: 20 }}>
+             <Skeleton colorMode="light" height={24} width={180} radius={4} />
+             <View style={{ flexDirection: 'row', marginTop: 16, gap: 12 }}>
+               <Skeleton colorMode="light" height={240} width={(Dimensions.get('window').width - 44) * 0.42} radius={16} />
+               <View style={{ flex: 1, gap: 7, justifyContent: 'space-between' }}>
+                 <Skeleton colorMode="light" height={75} width="100%" radius={13} />
+                 <Skeleton colorMode="light" height={75} width="100%" radius={13} />
+                 <Skeleton colorMode="light" height={75} width="100%" radius={13} />
+               </View>
+             </View>
+          </View>
+        )}
+
+
+        {!isLoading && <RecommendedSection
           content={recommendedContent}
           onViewAll={() => router.push('/(tabs)/learn')}
           onPressBook={(item) => {
@@ -151,6 +197,7 @@ export default function HomeScreen() {
             }
           }}
         />
+        }
 
       </ScrollView>
 

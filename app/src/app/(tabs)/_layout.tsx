@@ -4,10 +4,10 @@ import { GlassTabBar } from '@/components/navigation/TabBar';
 export default function TabLayout() {
   return (
     <Tabs
-      tabBar={(props) => <GlassTabBar {...props} />}
+      tabBar={(props) => <GlassTabBar {...(props as any)} />}
       screenOptions={{
         headerShown: false,
-        sceneContainerStyle: { backgroundColor: '#FCFAF8' }
+        sceneStyle: { backgroundColor: '#FCFAF8' }
       }}
     >
       <Tabs.Screen name="index" options={{ title: 'Home' }} />
