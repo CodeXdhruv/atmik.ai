@@ -128,18 +128,10 @@ export default function AddContentPage() {
     <div className="space-y-6 select-none relative">
       <Toaster position="top-right" />
       
-      {/* Header back row */}
-      <div className="flex items-center gap-4">
-        <Link 
-          href="/dashboard/content"
-          className="p-2 rounded-full border border-border-custom bg-white hover:bg-primary-navy/[0.02] text-primary-navy/70 hover:text-primary-navy transition-all shadow-sm"
-        >
-          <ArrowLeft size={14} />
-        </Link>
-        <div>
-          <h2 className="font-heading text-3xl font-bold text-primary-navy">Add New Content</h2>
-          <p className="text-xs text-primary-navy/40 mt-1 font-ui font-light">Create and publish content that inspires and uplifts.</p>
-        </div>
+      {/* Header row */}
+      <div>
+        <h2 className="font-heading text-3xl font-bold text-primary-navy">Add New Content</h2>
+        <p className="text-xs text-primary-navy/40 mt-1 font-ui font-light">Create and publish content that inspires and uplifts.</p>
       </div>
 
       {/* Main Grid: Left is Form, Right is Preview/Config */}
@@ -428,6 +420,7 @@ export default function AddContentPage() {
               value={thumbnail}
               onUploadSuccess={setThumbnail}
               onRemove={() => setThumbnail(undefined)}
+              maxSizeMB={2}
             />
 
             {/* Resource file */}
@@ -438,6 +431,7 @@ export default function AddContentPage() {
                 value={pdfFile}
                 onUploadSuccess={setPdfFile}
                 onRemove={() => setPdfFile(undefined)}
+                maxSizeMB={5}
               />
             )}
           </div>

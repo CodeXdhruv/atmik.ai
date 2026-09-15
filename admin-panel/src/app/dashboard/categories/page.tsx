@@ -14,15 +14,15 @@ import {
   ArrowDown, 
   Check, 
   X,
-  Aperture, Atom, Wind, Droplet, Feather, Flame, Waves, Infinity as InfinityIcon, Network, Layers, Boxes, Sparkles, Orbit, Asterisk, Focus, Zap, Hexagon, Triangle, Circle
+  Aperture, Atom, Wind, Droplet, Feather, Flame, Waves, Infinity as InfinityIcon, Network, Layers, Boxes, Sparkles, Orbit, Asterisk, Focus, Zap, Hexagon, Triangle, Circle, Sun, Moon, Heart, Compass, Lightbulb, Book, BookOpen, Smile, Shield, Star, Flower, Leaf, Globe, Target, Sunrise
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import { Category } from "@/services/mockData";
 
 const ICON_MAP: Record<string, React.ElementType> = {
-  Folder, Aperture, Atom, Wind, Droplet, Feather, Flame, Waves, InfinityIcon, Network, Layers, Boxes, Sparkles, Orbit, Asterisk, Focus, Zap, Hexagon, Triangle, Circle
+  Folder, Aperture, Atom, Wind, Droplet, Feather, Flame, Waves, Infinity: InfinityIcon, InfinityIcon, Network, Layers, Boxes, Sparkles, Orbit, Asterisk, Focus, Zap, Hexagon, Triangle, Circle, Sun, Moon, Heart, Compass, Lightbulb, Book, BookOpen, Smile, Shield, Star, Flower, Leaf, Globe, Target, Sunrise
 };
-const AVAILABLE_ICONS = Object.keys(ICON_MAP);
+const AVAILABLE_ICONS = Object.keys(ICON_MAP).filter(k => k !== "Infinity");
 
 export default function CategoriesPage() {
   const { categories, fetchCategories, addCategory, renameCategory, deleteCategory } = useAdminStore();
@@ -37,10 +37,12 @@ export default function CategoriesPage() {
   // Edit State
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [editIcon, setEditIcon] = useState("Folder");
 
   // Subcategory Add State
   const [addingSubToId, setAddingSubToId] = useState<string | null>(null);
   const [subCatName, setSubCatName] = useState("");
+  const [subCatIcon, setSubCatIcon] = useState("Folder");
 
   const handleAddRoot = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,8 +62,9 @@ export default function CategoriesPage() {
   const handleAddSub = async (parentId: string) => {
     if (!subCatName.trim()) return;
     try {
-      await addCategory(subCatName, parentId);
+      await addCategory(subCatName, parentId, subCatIcon);
       setSubCatName("");
+      setSubCatIcon("Folder");
       setAddingSubToId(null);
       toast.success(`Sub-category created!`);
     } catch (err) {
@@ -72,12 +75,13 @@ export default function CategoriesPage() {
   const handleSaveRename = async (id: string) => {
     if (!editName.trim()) return;
     try {
-      await renameCategory(id, editName);
+      await renameCategory(id, editName, editIcon);
       setEditingId(null);
       setEditName("");
-      toast.success("Category renamed!");
+      setEditIcon("Folder");
+      toast.success("Category updated successfully!");
     } catch (err) {
-      toast.error("Failed to rename category");
+      toast.error("Failed to update category");
     }
   };
 
@@ -112,23 +116,34 @@ export default function CategoriesPage() {
             })()}
             
             {isEditing ? (
-              <div className="flex items-center gap-2 flex-1">
+              <div className="flex items-center gap-2 flex-1 flex-wrap">
                 <input
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="px-2.5 py-1 bg-background border border-border-custom rounded text-xs text-primary-navy outline-none focus:border-accent-gold/40"
+                  className="px-2.5 py-1 bg-background border border-border-custom rounded text-xs text-primary-navy outline-none focus:border-accent-gold/40 flex-1 min-w-[120px]"
                   autoFocus
                 />
+                <select
+                  value={editIcon}
+                  onChange={(e) => setEditIcon(e.target.value)}
+                  className="px-2 py-1 bg-background border border-border-custom rounded text-xs text-primary-navy outline-none focus:border-accent-gold/40 cursor-pointer"
+                >
+                  {AVAILABLE_ICONS.map((icon) => (
+                    <option key={icon} value={icon}>{icon}</option>
+                  ))}
+                </select>
                 <button 
                   onClick={() => handleSaveRename(cat.id)}
                   className="p-1 rounded bg-success/10 text-success hover:bg-success hover:text-white cursor-pointer transition-colors"
+                  title="Save"
                 >
                   <Check size={12} />
                 </button>
                 <button 
                   onClick={() => setEditingId(null)}
                   className="p-1 rounded bg-primary-navy/5 text-primary-navy/50 hover:bg-primary-navy/10 cursor-pointer transition-colors"
+                  title="Cancel"
                 >
                   <X size={12} />
                 </button>
@@ -136,7 +151,7 @@ export default function CategoriesPage() {
             ) : (
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-primary-navy truncate">{cat.name}</p>
-                <p className="text-[9px] text-primary-navy/35 font-light truncate">/{cat.slug}</p>
+                <p className="text-[9px] text-primary-navy/35 font-light truncate">/{cat.slug || cat.id}</p>
               </div>
             )}
           </div>
@@ -149,6 +164,7 @@ export default function CategoriesPage() {
                 onClick={() => {
                   setAddingSubToId(cat.id);
                   setSubCatName("");
+                  setSubCatIcon("Folder");
                 }}
                 className="p-1.5 rounded-lg hover:bg-primary-navy/5 text-primary-navy/50 hover:text-accent-gold cursor-pointer transition-colors"
                 title="Add Sub-category"
@@ -156,14 +172,15 @@ export default function CategoriesPage() {
                 <Plus size={13} />
               </button>
               
-              {/* Rename */}
+              {/* Rename / Edit */}
               <button
                 onClick={() => {
                   setEditingId(cat.id);
                   setEditName(cat.name);
+                  setEditIcon(cat.icon || "Folder");
                 }}
                 className="p-1.5 rounded-lg hover:bg-primary-navy/5 text-primary-navy/50 hover:text-primary-navy cursor-pointer transition-colors"
-                title="Rename"
+                title="Edit Category"
               >
                 <Edit2 size={13} />
               </button>
@@ -199,7 +216,7 @@ export default function CategoriesPage() {
         {/* Inline Add Sub-category Input Form */}
         {isAddingSub && (
           <div 
-            className="p-3 bg-background border border-dashed border-accent-gold/30 rounded-xl flex items-center gap-2"
+            className="p-3 bg-background border border-dashed border-accent-gold/30 rounded-xl flex items-center gap-2 flex-wrap"
             style={{ marginLeft: `${(depth + 1) * 28}px` }}
           >
             <input
@@ -207,8 +224,17 @@ export default function CategoriesPage() {
               placeholder="Sub-category name..."
               value={subCatName}
               onChange={(e) => setSubCatName(e.target.value)}
-              className="flex-1 px-3 py-1.5 bg-white border border-border-custom rounded-lg text-xs text-primary-navy outline-none focus:border-accent-gold/40"
+              className="flex-1 px-3 py-1.5 bg-white border border-border-custom rounded-lg text-xs text-primary-navy outline-none focus:border-accent-gold/40 min-w-[120px]"
             />
+            <select
+              value={subCatIcon}
+              onChange={(e) => setSubCatIcon(e.target.value)}
+              className="px-2 py-1.5 bg-white border border-border-custom rounded-lg text-xs text-primary-navy outline-none focus:border-accent-gold/40 cursor-pointer"
+            >
+              {AVAILABLE_ICONS.map((icon) => (
+                <option key={icon} value={icon}>{icon}</option>
+              ))}
+            </select>
             <button
               onClick={() => handleAddSub(cat.id)}
               className="px-3 py-1.5 bg-primary-navy text-white text-xs rounded-lg font-semibold cursor-pointer hover:bg-primary-navy/90"

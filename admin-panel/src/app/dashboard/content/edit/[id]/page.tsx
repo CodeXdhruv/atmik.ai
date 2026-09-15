@@ -150,18 +150,10 @@ export default function EditContentPage({ params }: { params: Promise<{ id: stri
     <div className="space-y-6 select-none relative font-ui">
       <Toaster position="top-right" />
       
-      {/* Header back row */}
-      <div className="flex items-center gap-4">
-        <Link 
-          href="/dashboard/content"
-          className="p-2 rounded-full border border-border-custom bg-white hover:bg-primary-navy/[0.02] text-primary-navy/70 hover:text-primary-navy transition-all shadow-sm"
-        >
-          <ArrowLeft size={14} />
-        </Link>
-        <div>
-          <h2 className="font-heading text-3xl font-bold text-primary-navy">Edit Content</h2>
-          <p className="text-xs text-primary-navy/40 mt-1 font-ui font-light">Update your content settings and publishing status.</p>
-        </div>
+      {/* Header row */}
+      <div>
+        <h2 className="font-heading text-3xl font-bold text-primary-navy">Edit Content</h2>
+        <p className="text-xs text-primary-navy/40 mt-1 font-ui font-light">Update your content settings and publishing status.</p>
       </div>
 
       {/* Main Grid: Left is Form, Right is Preview/Config */}
@@ -446,11 +438,12 @@ export default function EditContentPage({ params }: { params: Promise<{ id: stri
             
             {/* Thumbnail */}
             <R2Uploader
-              label="Thumbnail Image *"
+              label="Thumbnail Image (Optional)"
               acceptType="image"
               value={thumbnail}
               onUploadSuccess={setThumbnail}
               onRemove={() => setThumbnail(undefined)}
+              maxSizeMB={2}
             />
 
             {/* Resource file */}
@@ -461,6 +454,7 @@ export default function EditContentPage({ params }: { params: Promise<{ id: stri
                 value={pdfFile}
                 onUploadSuccess={setPdfFile}
                 onRemove={() => setPdfFile(undefined)}
+                maxSizeMB={type === "Book" ? 5 : 50}
               />
             )}
           </div>

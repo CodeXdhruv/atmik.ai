@@ -49,7 +49,8 @@ export default function LoginPage() {
         id: data.id, 
         name: user.email?.split('@')[0] || "Admin", 
         email: user.email || "", 
-        role: data.role as 'ADMIN' | 'USER'
+        role: data.role as 'ADMIN' | 'USER',
+        token: token
       });
 
       toast.success("Login successful!");
