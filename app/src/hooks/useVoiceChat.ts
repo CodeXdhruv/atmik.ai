@@ -19,6 +19,11 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
   const [error, setError] = useState<string | null>(null);
   
   const wsRef = useRef<WebSocket | null>(null);
+  const langRef = useRef(lang);
+  useEffect(() => {
+    langRef.current = lang;
+  }, [lang]);
+
   const recorder = useAudioRecorder({
     sampleRate: 16000,
     numberOfChannels: 1,
@@ -111,7 +116,7 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
 
   // Keep connection alive to prevent Cloudflare from dropping idle WebSockets
   useEffect(() => {
-    let pingInterval: NodeJS.Timeout;
+    let pingInterval: ReturnType<typeof setInterval>;
     if (isConnected) {
       pingInterval = setInterval(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -123,7 +128,7 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
   }, [isConnected]);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
     if (isRecording) {
       silenceStartRef.current = null;
       interval = setInterval(() => {
@@ -230,7 +235,7 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
         wsRef.current.send(JSON.stringify({
           type: 'audio_chunk',
           userId,
-          lang,
+          lang: langRef.current,
           audioBase64: base64
         }));
       }
