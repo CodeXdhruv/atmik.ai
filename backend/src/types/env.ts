@@ -7,6 +7,7 @@ export type Bindings = {
   // Environment variables
   OPENAI_API_KEY?: string;
   KOKORO_API_URL?: string; 
+  TTS_ENDPOINT?: string;
   
   // R2 S3 API Variables
   CLOUDFLARE_ACCOUNT_ID?: string;
