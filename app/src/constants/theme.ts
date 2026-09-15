@@ -9,6 +9,7 @@ import { Platform } from 'react-native';
 
 export const Colors = {
   primary: '#24385A',
+  primaryNavy: '#24385A',
   secondary: '#DCEAF6',
   accent: '#D8B97A',
   background: '#FAFBFC',
@@ -89,6 +90,7 @@ export const Radius = {
   lg: 20,
   xl: 28,
   xxl: 40,
+  full: 9999,
 } as const;
 
 export const Shadows = {
@@ -105,6 +107,20 @@ export const Shadows = {
     shadowOpacity: 0.03,
     shadowRadius: 12,
     elevation: 2,
+  },
+  light: {
+    shadowColor: '#24385A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  medium: {
+    shadowColor: '#24385A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.05,
+    shadowRadius: 24,
+    elevation: 3,
   }
 } as const;
 

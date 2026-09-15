@@ -15,25 +15,25 @@ export class LocalNotificationService {
     return status === 'granted';
   }
 
-  static async scheduleMorningIntention() {
+  static async scheduleMorningForYou() {
     const hasPermission = await this.requestPermissions();
     if (!hasPermission) return;
 
-    // Schedule for 8:00 AM every day
+    // Schedule for 8:30 AM every day
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: '☀️ Good morning',
-        body: 'What is your intention for today? Take 2 minutes to set it now.',
+        title: '🌱 A moment for yourself',
+        body: 'What has pulled you away from yourself lately? Take a quick breath and let it go with Atmik.',
         sound: 'default',
-        data: { type: 'REMINDER_MORNING' }
+        data: { type: 'REMINDER_FOR_YOU' }
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
         hour: 8,
-        minute: 0,
+        minute: 30,
       },
     });
-    console.log('Scheduled morning intention notification for 8:00 AM');
+    console.log('Scheduled morning For You notification for 8:30 AM');
   }
 
   static async scheduleEveningReflection() {
@@ -43,10 +43,10 @@ export class LocalNotificationService {
     // Schedule for 9:00 PM every day
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: '🌙 Evening Reflection',
-        body: 'It’s time to wind down. What brought you peace today? Add it to your gratitude journal.',
+        title: '🌙 Your daily reflection is ready',
+        body: 'Before you rest, take a gentle look back at your day. Reflect and gain clarity.',
         sound: 'default',
-        data: { type: 'REMINDER_EVENING' }
+        data: { type: 'REMINDER_TODAYS_REFLECTION' }
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
@@ -57,7 +57,7 @@ export class LocalNotificationService {
     console.log('Scheduled evening reflection notification for 9:00 PM');
   }
 
-  static async scheduleRandomMindfulnessPause() {
+  static async scheduleRandomInnerJourney() {
     const hasPermission = await this.requestPermissions();
     if (!hasPermission) return;
 
@@ -67,10 +67,10 @@ export class LocalNotificationService {
 
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: '🌬️ The Pause Nudge',
-        body: 'Take a deep breath. Drop your shoulders. Return to the present moment.',
+        title: '✨ Look Within',
+        body: 'Feeling overwhelmed or need someone to talk to? Atmik is here to guide your inner journey right now.',
         sound: 'default',
-        data: { type: 'REMINDER_PAUSE' }
+        data: { type: 'REMINDER_INNER_JOURNEY' }
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
@@ -78,15 +78,15 @@ export class LocalNotificationService {
         minute,
       },
     });
-    console.log(`Scheduled random pause nudge for ${hour}:${minute.toString().padStart(2, '0')}`);
+    console.log(`Scheduled random inner journey nudge for ${hour}:${minute.toString().padStart(2, '0')}`);
   }
 
   static async setupAllLocalReminders() {
     // Clear all existing scheduled notifications so we don't duplicate
     await Notifications.cancelAllScheduledNotificationsAsync();
     
-    await this.scheduleMorningIntention();
+    await this.scheduleMorningForYou();
     await this.scheduleEveningReflection();
-    await this.scheduleRandomMindfulnessPause();
+    await this.scheduleRandomInnerJourney();
   }
 }

@@ -13,7 +13,7 @@ const zustandStorage: StateStorage = {
     return value ?? null;
   },
   removeItem: (name) => {
-    return storage.delete(name);
+    return storage.remove(name);
   },
 };
 
@@ -38,6 +38,12 @@ interface PracticeState {
   setGratitudes: (gratitudes: string[]) => void;
   updateGratitude: (text: string, index: number) => void;
 
+  seenQuoteIds: string[];
+  currentDailyQuotes: any[];
+  lastQuoteRefreshDate: string;
+  setSeenQuoteIds: (ids: string[]) => void;
+  setCurrentDailyQuotes: (quotes: any[]) => void;
+  setLastQuoteRefreshDate: (date: string) => void;
   lastUpdated: number;
   checkAndResetDaily: () => void;
 }
@@ -66,12 +72,18 @@ export const usePracticeStore = create<PracticeState>()(
       setJournalSaved: (saved) => set({ journalSaved: saved }),
 
       gratitudes: ['', '', ''],
+      seenQuoteIds: [],
+      currentDailyQuotes: [],
+      lastQuoteRefreshDate: '',
       setGratitudes: (gratitudes) => set({ gratitudes }),
       updateGratitude: (text, index) => set((state) => {
         const newG = [...state.gratitudes];
         newG[index] = text;
         return { gratitudes: newG };
       }),
+      setSeenQuoteIds: (ids) => set({ seenQuoteIds: ids }),
+      setCurrentDailyQuotes: (quotes) => set({ currentDailyQuotes: quotes }),
+      setLastQuoteRefreshDate: (date) => set({ lastQuoteRefreshDate: date }),
       
       lastUpdated: new Date().setHours(0, 0, 0, 0),
       checkAndResetDaily: () => set((state) => {

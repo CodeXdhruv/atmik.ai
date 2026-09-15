@@ -6,7 +6,7 @@ const getAuthHeaders = async () => {
   let token = 'temp-user-token';
   const currentUser = auth().currentUser;
   if (currentUser) {
-    token = await currentUser.getIdToken();
+    token = await currentUser.getIdToken(false);
   }
   return {
     'Authorization': `Bearer ${token}`,
@@ -53,4 +53,24 @@ export const apiService = {
       return [];
     }
   },
+
+  fetchQuotesPool: async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/library/quotes`, {
+        method: 'GET',
+        headers: await getAuthHeaders(),
+      });
+      if (!response.ok) {
+        console.error("Failed to fetch quotes pool:", response.status);
+        return [];
+      }
+      const data = await response.json();
+      // The backend returns c.json(result.results), which is an array, or {data: []} depending on the standard
+      return Array.isArray(data) ? data : (data.data || []);
+    } catch (error) {
+      console.error("Error fetching quotes pool:", error);
+      return [];
+    }
+  },
+
 };
