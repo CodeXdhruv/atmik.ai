@@ -16,16 +16,18 @@ const MAX_AUDIO_BYTES = 2 * 1024 * 1024;
  * during internal JSON serialization.
  */
 async function transcribeAudio(ai: any, audioBytes: Uint8Array): Promise<string> {
-  console.log(`🎙️ [Backend] Audio size: ${audioBytes.byteLength} bytes`);
-  
-  // Use AI binding but pass raw Uint8Array (not spread into array)
-  // The key fix: use Buffer.from() to ensure proper binary handling
-  const input = {
-    audio: Array.from(audioBytes),
-  };
-  
-  const whisperResponse = await ai.run('@cf/openai/whisper-large-v3-turbo', input);
-  return whisperResponse.text || '';
+  console.log(`🎙️ [Backend] Transcribing audio chunk size: ${audioBytes.byteLength} bytes`);
+  try {
+    const response: any = await ai.run('@cf/openai/whisper-large-v3-turbo', {
+      audio: Array.from(audioBytes)
+    });
+    const transcribedText = response?.text?.trim() || "";
+    console.log(`🎙️ [Backend] Whisper STT Output: "${transcribedText}"`);
+    return transcribedText;
+  } catch (err: any) {
+    console.error(`🎙️ [Backend] Whisper STT Error:`, err);
+    throw err;
+  }
 }
 
 // GET /api/voice-chat
@@ -83,6 +85,12 @@ voice.get('/', upgradeWebSocket((c) => {
           sessionUserId = data.userId || '';
           sessionLang = data.lang || 'hi';
           console.log(`🎙️ [Backend] Session initialized: user=${sessionUserId}, lang=${sessionLang}`);
+          
+          // Pre-warm Render Hindi TTS endpoint in background if Hindi selected
+          if (sessionLang === 'hi' && c.env.TTS_ENDPOINT) {
+            c.executionCtx.waitUntil(fetch(`${c.env.TTS_ENDPOINT}/health`).catch(() => {}));
+          }
+
           ws.send(JSON.stringify({ type: 'session_ready' }));
           return;
         }
@@ -164,7 +172,7 @@ async function processTranscription(c: any, ws: any, userId: string, lang: strin
   let currentSentence = "";
   let fullResponse = "";
   let chunkIndex = 0;
-  let ttsPromiseChain = Promise.resolve();
+  let ttsPromises: Promise<void>[] = [];
   const decoder = new TextDecoder();
 
   // 4. Sentence Buffering & TTS Streaming
@@ -184,9 +192,12 @@ async function processTranscription(c: any, ws: any, userId: string, lang: strin
             // Send live text to client
             ws.send(JSON.stringify({ type: 'text_stream', text: textChunk }));
 
-            // Check for sentence boundaries
+            // Check for chunk boundaries (more granular for lower latency, including Hindi Purna Viram '।')
             const wordCount = currentSentence.trim().split(/\s+/).length;
-            if (/[.?!]\s/.test(currentSentence) || /[.?!]$/.test(currentSentence) || /\n/.test(currentSentence) || (currentSentence.includes(',') && wordCount > 5)) {
+            const isPunctuation = /[.?!,;:।]\s/.test(currentSentence) || /[.?!,;:।]$/.test(currentSentence) || /\n/.test(currentSentence);
+            const targetWords = chunkIndex === 0 ? 4 : 5;
+            
+            if (isPunctuation || wordCount >= targetWords) {
               let sentenceToSpeak = currentSentence.trim();
               currentSentence = ""; 
 
@@ -198,12 +209,13 @@ async function processTranscription(c: any, ws: any, userId: string, lang: strin
                 sentenceToSpeak = sentenceToSpeak.replace(emotionMatch[0], '').trim();
               }
 
-              if (sentenceToSpeak.length > 2) {
+              if (sentenceToSpeak.length > 1) {
                 const currentIndex = chunkIndex++;
                 const currentSentenceToSpeak = sentenceToSpeak;
                 const currentEmotion = emotionTag;
                 
-                ttsPromiseChain = ttsPromiseChain.then(async () => {
+                // Fire TTS asynchronously immediately instead of sequentially waiting
+                const ttsTask = (async () => {
                   console.log(`🎙️ [Backend] Synthesizing TTS chunk [${currentIndex}]: "${currentSentenceToSpeak}"`);
                   const audioBase64 = await synthesize(c.env, currentSentenceToSpeak, currentEmotion, lang);
                   if (audioBase64) {
@@ -213,7 +225,8 @@ async function processTranscription(c: any, ws: any, userId: string, lang: strin
                       audioBase64 
                     }));
                   }
-                });
+                })();
+                ttsPromises.push(ttsTask);
               }
             }
           }
@@ -235,16 +248,17 @@ async function processTranscription(c: any, ws: any, userId: string, lang: strin
     }
 
     const currentIndex = chunkIndex++;
-    ttsPromiseChain = ttsPromiseChain.then(async () => {
+    const ttsTask = (async () => {
       const audioBase64 = await synthesize(c.env, sentenceToSpeak, emotionTag, lang);
       if (audioBase64) {
         ws.send(JSON.stringify({ type: 'tts_audio', index: currentIndex, audioBase64 }));
       }
-    });
+    })();
+    ttsPromises.push(ttsTask);
   }
 
-  // Wait for all TTS chunks to be sent before marking as done
-  await ttsPromiseChain;
+  // Wait for all concurrent TTS chunks to finish before marking as done
+  await Promise.all(ttsPromises);
   console.log('🎙️ [Backend] Completed sending all TTS chunks');
   ws.send(JSON.stringify({ type: 'generation_done' }));
 
