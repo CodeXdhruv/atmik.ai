@@ -6,11 +6,13 @@ import { useFocusEffect } from 'expo-router';
 import { Colors, Spacing } from '@/constants/theme';
 import innerJourneyData from '../../../assets/inner_journey.json';
 
-import { TodaysReflectionCard } from '../../components/journey/TodaysReflectionCard';
-import { LookWithinCard } from '../../components/journey/LookWithinCard';
-import { TalkToAtmikCard } from '../../components/journey/TalkToAtmikCard';
-import { ThoughtToCarryCard } from '../../components/journey/ThoughtToCarryCard';
-import { ReflectionsPreview } from '../../components/journey/ReflectionsPreview';
+import { 
+  LookWithinCard, 
+  TalkToAtmikCard, 
+  ThoughtToCarryCard, 
+  ReflectionsPreview, 
+  TodaysReflectionCard,
+} from '@/components/journey/JourneyComponents';
 
 export default function JourneyScreen() {
   const [todaysReflectionData, setTodaysReflectionData] = useState<any>(null);
