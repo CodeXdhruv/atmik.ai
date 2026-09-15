@@ -9,8 +9,7 @@ import urllib.request
 
 app = FastAPI()
 
-# Models directory (relative for local testing)
-EN_MODEL_PATH = "models/en_IN-spicor-ljspeech.onnx"
+# Models directory
 HI_MODEL_PATH = "models/hi_IN-priyamvada-medium.onnx"
 
 def download_file(url, path):
@@ -19,23 +18,18 @@ def download_file(url, path):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         urllib.request.urlretrieve(url, path)
 
-EN_MODEL_URL = "https://huggingface.co/navgurukul-ai-labs/text-to-speech-en-IN-piper/resolve/main/en_IN-dataset%3Dspicor-english-base%3Dljspeech-epochs%3D1089.onnx"
 HI_MODEL_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/hi/hi_IN/priyamvada/medium/hi_IN-priyamvada-medium.onnx"
 
-print("Downloading Piper Models if not present...")
-download_file(EN_MODEL_URL, EN_MODEL_PATH)
-download_file(EN_MODEL_URL + ".json", EN_MODEL_PATH + ".json")
+print("Downloading Hindi Piper Model if not present...")
 download_file(HI_MODEL_URL, HI_MODEL_PATH)
 download_file(HI_MODEL_URL + ".json", HI_MODEL_PATH + ".json")
 
-print("Loading Piper Models...")
+print("Loading Hindi Piper Model...")
 try:
-    en_voice = PiperVoice.load(EN_MODEL_PATH)
     hi_voice = PiperVoice.load(HI_MODEL_PATH)
-    print("TTS Models loaded successfully")
+    print("Hindi TTS Model loaded successfully")
 except Exception as e:
-    print(f"Error loading models: {e}")
-    en_voice = None
+    print(f"Error loading Hindi model: {e}")
     hi_voice = None
 
 class TTSRequest(BaseModel):
@@ -45,17 +39,13 @@ class TTSRequest(BaseModel):
 
 @app.post("/speech/v1/tts")
 def tts(req: TTSRequest):
-    # Select voice based on language
-    voice = hi_voice if req.language == "hi" else en_voice
+    # Only Hindi voice is loaded and used in this hosted service
+    voice = hi_voice
     
     if not voice:
-        return {"error": f"Voice for language '{req.language}' not loaded."}, 500
+        return {"error": "Hindi Voice model not loaded."}, 500
 
-    # Map emotion tags to speech synthesis parameters
-    # length_scale: >1 is slower, <1 is faster
-    # noise_scale: pitch variation/expression
-    
-    length_scale = 1.0
+    length_scale = 0.9  # 10% faster synthesis for lower latency
     noise_scale = 0.667
     noise_w = 0.8
     
@@ -84,5 +74,7 @@ def tts(req: TTSRequest):
     return Response(content=wav_io.getvalue(), media_type="audio/wav")
 
 @app.get("/health")
+@app.get("/")
 def health():
-    return {"status": "ok", "en_loaded": en_voice is not None, "hi_loaded": hi_voice is not None}
+    return {"status": "ok", "hi_loaded": hi_voice is not None}
+
