@@ -77,8 +77,9 @@ export default function VoiceScreen({ isBackground = false }: { isBackground?: b
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
   
+  const [selectedLang, setSelectedLang] = React.useState<'hi' | 'en'>('hi');
   const userId = auth().currentUser?.uid || 'anonymous';
-  const { isConnected, isRecording, transcription, aiText, error, startRecording, stopRecording } = useVoiceChat(userId, 'hi');
+  const { isConnected, isRecording, transcription, aiText, error, startRecording, stopRecording } = useVoiceChat(userId, selectedLang);
 
   // Animation values
   const pulse = useSharedValue(0);
@@ -197,8 +198,14 @@ export default function VoiceScreen({ isBackground = false }: { isBackground?: b
               <Text style={styles.headerTitle}>AI Voice</Text>
             </View>
 
-            <TouchableOpacity style={styles.iconButton}>
-              <Settings2 color={NAVY} size={24} strokeWidth={1.5} />
+            <TouchableOpacity 
+              style={styles.langToggle}
+              onPress={() => setSelectedLang(prev => prev === 'hi' ? 'en' : 'hi')}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.langToggleText}>
+                {selectedLang === 'hi' ? '🇮🇳 Hindi' : '🇬🇧 English'}
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -483,5 +490,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 24,
     elevation: 8,
+  },
+  langToggle: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: "#FFF",
+    borderWidth: 1,
+    borderColor: GOLD,
+    elevation: 2,
+  },
+  langToggleText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: NAVY,
   },
 });
