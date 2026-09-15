@@ -94,6 +94,7 @@ export const useAdminStore = create<AdminState>((set, get) => ({
       name: user.name || user.email?.split('@')[0] || 'Admin',
       email: user.email || '',
       role: user.role || 'ADMIN',
+      token: user.token,
       avatar: user.avatar || `https://images.unsplash.com/photo-${Math.random() > 0.5 ? '1534528741775-53994a69daeb' : '1507003211169-0a1dd7228f2d'}?auto=format&fit=crop&w=150&h=150&q=80`,
     } as User;
     set({ isAuthenticated: true, currentAdmin: admin });
@@ -123,7 +124,7 @@ export const useAdminStore = create<AdminState>((set, get) => ({
         slug: item.id, // Or generate slug
         type: item.type,
         author: item.author || 'Dr. Atmik Jain',
-        status: item.isPublished ? 'Published' : 'Draft',
+        status: (item.isPublished ? 'Published' : 'Draft') as 'Published' | 'Draft',
         views: item.views || 0,
         bookmarks: 0,
         downloads: 0,
@@ -152,7 +153,7 @@ export const useAdminStore = create<AdminState>((set, get) => ({
         name: u.email.split('@')[0], // Fallback name
         email: u.email,
         role: u.role,
-        status: 'Active',
+        status: 'Active' as 'Active',
         avatar: `https://ui-avatars.com/api/?name=${u.email.split('@')[0]}&background=random`,
         lastLogin: 'Recently',
         permissions: u.role === 'ADMIN' ? ['ALL_ACCESS'] : ['READ_ONLY']
@@ -223,25 +224,19 @@ export const useAdminStore = create<AdminState>((set, get) => ({
     get().addLog('Delete', `Deleted ${item?.type || 'content'} "${item?.title || 'item'}"`);
   },
 
-  // Categories Actions  // -------------------------------------------------------------
-  // Categories
-  // -------------------------------------------------------------
-  categories: [],
-  
+  // Categories Actions
   fetchCategories: async () => {
     try {
       const data = await apiService.fetchCategories();
-      // Format backend data into a tree if needed, but for now we can just store the flat list or tree.
-      // The old categories used nested children. The backend returns flat.
-      // Let's build a tree from the flat list.
       const buildTree = (items: any[], parentId: string | null = null): Category[] => {
         return items
           .filter((item) => item.parentId === parentId)
           .map((item) => ({
             id: item.id,
             name: item.name,
+            slug: item.id || item.name.toLowerCase().replace(/\s+/g, '-'),
+            parentId: item.parentId || null,
             icon: item.icon,
-            count: 0,
             children: buildTree(items, item.id)
           }));
       };

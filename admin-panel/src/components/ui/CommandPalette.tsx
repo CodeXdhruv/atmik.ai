@@ -61,10 +61,10 @@ export default function CommandPalette() {
       icon: FileText
     }));
   const filteredUsers = users
-    .filter(u => u.name.toLowerCase().includes(query.toLowerCase()) || u.email.toLowerCase().includes(query.toLowerCase()))
+    .filter(u => (u.name || '').toLowerCase().includes(query.toLowerCase()) || u.email.toLowerCase().includes(query.toLowerCase()))
     .slice(0, 3)
     .map(u => ({
-      name: `User: ${u.name} (${u.role})`,
+      name: `User: ${u.name || u.email} (${u.role})`,
       href: `/dashboard/users`,
       icon: Users
     }));

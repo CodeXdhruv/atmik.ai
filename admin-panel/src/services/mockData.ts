@@ -31,6 +31,7 @@ export interface Category {
   name: string;
   slug: string;
   parentId: string | null;
+  icon?: string;
   children?: Category[];
 }
 
@@ -51,6 +52,7 @@ export interface User {
   status?: 'Active' | 'Inactive';
   lastLogin?: string;
   permissions?: string[];
+  token?: string;
 }
 
 export interface MediaItem {

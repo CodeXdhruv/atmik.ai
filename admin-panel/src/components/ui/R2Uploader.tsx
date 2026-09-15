@@ -81,7 +81,15 @@ export default function R2Uploader({
     }
   };
 
+  
+  const onDropRejected = (fileRejections: any[]) => {
+    const errorMsg = fileRejections[0]?.errors[0]?.message;
+    alert(`File upload failed: ${errorMsg || 'File is too large.'}`);
+  };
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDropRejected,
+
     onDrop,
     accept: getAcceptParams(),
     maxFiles: 1,

@@ -73,10 +73,11 @@ export const apiService = {
       xhr.open('POST', `${API_BASE_URL}/api/library/upload`, true);
       getAuthHeaders().then(headers => {
         // Remove Content-Type so browser sets boundary for FormData
-        delete headers['Content-Type'];
+        const reqHeaders = headers as Record<string, string>;
+        delete reqHeaders['Content-Type'];
         
-        Object.keys(headers).forEach(key => {
-          xhr.setRequestHeader(key, headers[key as keyof typeof headers]);
+        Object.keys(reqHeaders).forEach(key => {
+          xhr.setRequestHeader(key, reqHeaders[key]);
         });
 
         xhr.send(formData);

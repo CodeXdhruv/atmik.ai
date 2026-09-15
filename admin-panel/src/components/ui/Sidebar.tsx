@@ -38,9 +38,9 @@ export default function Sidebar() {
       title: "CONTENT",
       items: [
         { name: "Library", href: "/dashboard/content", icon: BookOpen },
+        { name: "Quotes", href: "/dashboard/quotes", icon: MessageSquare },
         { name: "Create", href: "/dashboard/content/new", icon: Plus },
         { name: "Categories", href: "/dashboard/categories", icon: LayoutGrid },
-        { name: "Tags", href: "/dashboard/tags", icon: Tag },
         { name: "Media", href: "/dashboard/media", icon: ImageIcon }
       ]
     },
