@@ -27,3 +27,14 @@ index_name = "atmik-index-v2"
 [vars]
 FIREBASE_PROJECT_ID = "swatantra-ai"
 TTS_ENDPOINT = "https://dr-swatantra-ai.onrender.com/speech/v1/tts"
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true
+
+[observability.traces]
+enabled = false
+head_sampling_rate = 1
+persist = true

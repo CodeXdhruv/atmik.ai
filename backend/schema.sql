@@ -46,3 +46,10 @@ CREATE TABLE IF NOT EXISTS Notification (
     createdAt TEXT NOT NULL,
     FOREIGN KEY (userId) REFERENCES User(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS QuotesPool (
+    id TEXT PRIMARY KEY,
+    text TEXT NOT NULL,
+    author TEXT,
+    createdAt TEXT NOT NULL
+);
