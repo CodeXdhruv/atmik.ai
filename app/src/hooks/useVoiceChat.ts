@@ -165,12 +165,18 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
 
   const queueAudioPlayback = async (base64Audio: string) => {
     try {
-      const uri = FileSystem.cacheDirectory + `temp_audio_${Date.now()}.wav`;
-      await FileSystem.writeAsStringAsync(uri, base64Audio, { encoding: FileSystem.EncodingType.Base64 });
+      // Stream live audio directly in memory via Data URI for zero disk I/O latency
+      const dataUri = `data:audio/wav;base64,${base64Audio}`;
+      let sound: AudioPlayer;
+      try {
+        sound = createAudioPlayer(dataUri);
+      } catch (e) {
+        const uri = FileSystem.cacheDirectory + `temp_audio_${Date.now()}.wav`;
+        await FileSystem.writeAsStringAsync(uri, base64Audio, { encoding: FileSystem.EncodingType.Base64 });
+        sound = createAudioPlayer(uri);
+      }
       
-      const sound = createAudioPlayer(uri);
       soundQueueRef.current.push(sound);
-      
       playNextAudio();
     } catch (err) {
       console.error("Failed to queue audio", err);
