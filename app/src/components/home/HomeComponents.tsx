@@ -1,19 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withSequence,
-  withRepeat,
-  withDelay,
-  Easing,
-  runOnJS,
-} from 'react-native-reanimated';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { Image, ImageBackground } from 'expo-image';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSequence, withRepeat, withDelay, Easing, runOnJS } from 'react-native-reanimated';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
-import { Wind, Check } from 'lucide-react-native';
+import { Wind, Check, Bookmark, ChevronRight } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Colors, Spacing, Radius } from '@/constants/theme';
+import { Colors, Spacing, Radius, Shadows } from '@/constants/theme';
 import forYouData from '../../../assets/for_you_today.json';
 
 // ── Design tokens ──────────────────────────────────────────────
@@ -42,7 +34,7 @@ type MicroExperience = {
 
 // ── Background SVG ────────────────────────────────────────────
 const RippleDecoration = () => (
-  <Svg width={130} height={130} viewBox="0 0 130 130" style={styles.svgDecor}>
+  <Svg width={130} height={130} viewBox="0 0 130 130" style={stylesLetItGoCard.svgDecor}>
     <Defs>
       <RadialGradient id="rg" cx="50%" cy="50%" r="50%">
         <Stop offset="0%" stopColor={GOLD} stopOpacity="0.18" />
@@ -86,7 +78,7 @@ const Particle = ({ isActive }: { isActive: boolean }) => {
     transform: [{ translateX: translateX.value }, { translateY: translateY.value }, { scale: scale.value }],
   }));
 
-  return <Animated.View style={[styles.particle, style]} />;
+  return <Animated.View style={[stylesLetItGoCard.particle, style]} />;
 };
 
 // ── Floating word chip ─────────────────────────────────────────
@@ -135,20 +127,26 @@ const FloatingWord = ({
   const particles = Array.from({ length: 8 }).map((_, i) => <Particle key={i} isActive={particlesActive} />);
 
   return (
-    <Animated.View style={[styles.wordWrapper, animStyle]}>
+    <Animated.View style={[stylesLetItGoCard.wordWrapper, animStyle]}>
       <TouchableOpacity
         activeOpacity={0.75}
         onPress={() => { if (status === 'idle') onPress(word, index); }}
         accessibilityRole="button"
         accessibilityLabel={`Select ${word}`}
-        style={styles.wordTouch}
+        style={stylesLetItGoCard.wordTouch}
       >
-        <View style={styles.wordChip}>
-          <Text style={styles.wordText}>{word}</Text>
+        <View style={stylesLetItGoCard.wordChip}>
+          <Text 
+            style={stylesLetItGoCard.wordText}
+            adjustsFontSizeToFit
+            numberOfLines={1}
+          >
+            {word}
+          </Text>
           {particles}
         </View>
       </TouchableOpacity>
-      {!isLast && <View style={styles.wordDivider} />}
+      {!isLast && <View style={stylesLetItGoCard.wordDivider} />}
     </Animated.View>
   );
 };
@@ -156,7 +154,7 @@ const FloatingWord = ({
 // ── Main Component ─────────────────────────────────────────────
 type Stage = 'loading' | 'let_go' | 'make_space' | 'completed';
 
-export function LetItGoCard() {
+function LetItGoCardComponent() {
   const [stage, setStage] = useState<Stage>('loading');
   const [experience, setExperience] = useState<MicroExperience | null>(null);
   const [experienceIndex, setExperienceIndex] = useState(0);
@@ -297,20 +295,20 @@ export function LetItGoCard() {
 
   const renderQuestion = (label: string, question: string, helper: string | null, words: string[], activeChoice: string | null) => (
     <>
-      <View style={styles.cardHeader}>
+      <View style={stylesLetItGoCard.cardHeader}>
         <Wind color={GOLD} size={13} strokeWidth={2} />
-        <Text style={styles.cardLabel}>{label}</Text>
-        <View style={styles.headerLine} />
+        <Text style={stylesLetItGoCard.cardLabel}>{label}</Text>
+        <View style={stylesLetItGoCard.headerLine} />
       </View>
       
-      <View style={styles.contentArea}>
-        <View style={styles.questionContainer}>
-          <Text style={styles.question}>{question}</Text>
-          {helper && <Text style={styles.instruction}>{helper}</Text>}
+      <View style={stylesLetItGoCard.contentArea}>
+        <View style={stylesLetItGoCard.questionContainer}>
+          <Text style={stylesLetItGoCard.question}>{question}</Text>
+          {helper && <Text style={stylesLetItGoCard.instruction}>{helper}</Text>}
         </View>
       </View>
 
-      <View style={styles.wordsRow}>
+      <View style={stylesLetItGoCard.wordsRow}>
         {words.map((word, index) => (
           <FloatingWord
             key={word} word={word} index={index}
@@ -323,16 +321,16 @@ export function LetItGoCard() {
   );
 
   if (!experience) {
-    return <View style={styles.container}><View style={styles.card} /></View>; // Loading shell
+    return <View style={stylesLetItGoCard.container}><View style={stylesLetItGoCard.card} /></View>; // Loading shell
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.card}>
+    <View style={stylesLetItGoCard.container}>
+      <View style={stylesLetItGoCard.card}>
         <RippleDecoration />
         
         {stage !== 'completed' && (
-          <Animated.View style={[styles.innerFlow, contentAnimStyle]}>
+          <Animated.View style={[stylesLetItGoCard.innerFlow, contentAnimStyle]}>
             {stage === 'let_go' && renderQuestion(
               experience.label,
               experience.question,
@@ -351,15 +349,15 @@ export function LetItGoCard() {
         )}
 
         {stage === 'completed' && (
-          <Animated.View style={[styles.innerFlow, styles.completedContainer, completionAnimStyle]}>
-            <View style={styles.checkIconWrapper}>
+          <Animated.View style={[stylesLetItGoCard.innerFlow, stylesLetItGoCard.completedContainer, completionAnimStyle]}>
+            <View style={stylesLetItGoCard.checkIconWrapper}>
               <Check color={GOLD} size={18} strokeWidth={2.5} />
             </View>
-            <Text style={styles.completedTitle}>{experience.completion.title}</Text>
-            <Text style={styles.completedText}>{finalMessage}</Text>
+            <Text style={stylesLetItGoCard.completedTitle}>{experience.completion.title}</Text>
+            <Text style={stylesLetItGoCard.completedText}>{finalMessage}</Text>
             
-            <TouchableOpacity onPress={resetCard} style={styles.doneBtn} activeOpacity={0.6}>
-              <Text style={styles.doneText}>Done</Text>
+            <TouchableOpacity onPress={resetCard} style={stylesLetItGoCard.doneBtn} activeOpacity={0.6}>
+              <Text style={stylesLetItGoCard.doneText}>Done</Text>
             </TouchableOpacity>
           </Animated.View>
         )}
@@ -368,7 +366,7 @@ export function LetItGoCard() {
   );
 }
 
-const styles = StyleSheet.create({
+const stylesLetItGoCard = StyleSheet.create({
   container: {
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.lg,
@@ -466,6 +464,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: WORD_TEXT,
     letterSpacing: 0.2,
+    textAlign: 'center',
   },
   wordDivider: {
     width: 1,
@@ -519,3 +518,359 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
 });
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const HORIZONTAL_PADDING = 22;
+const COLUMN_GAP = 12;
+const CONTENT_WIDTH = SCREEN_WIDTH - HORIZONTAL_PADDING * 2;
+const BOOK_COL_WIDTH = CONTENT_WIDTH * 0.42;
+const ARTICLE_COL_WIDTH = CONTENT_WIDTH * 0.58 - COLUMN_GAP;
+
+// ─── Types ───────────────────────────────────────────────
+interface LibraryItem {
+  id: string;
+  title: string;
+  type: 'BOOK' | 'ARTICLE' | string;
+  coverUrl?: string | null;
+  fileUrl?: string | null;
+  author?: string | null;
+  description?: string | null;
+  readTime?: number | null;
+  createdAt?: string;
+}
+
+interface RecommendedSectionProps {
+  content: LibraryItem[];
+  onViewAll: () => void;
+  onPressBook: (item: LibraryItem) => void;
+  onPressArticle: (item: LibraryItem) => void;
+}
+
+// ─── Featured Book Card ──────────────────────────────────
+const FeaturedBookCard = ({
+  item,
+  onPress,
+}: {
+  item: LibraryItem;
+  onPress: () => void;
+}) => {
+  const coverSource = item.coverUrl
+    ? { uri: item.coverUrl }
+    : require('@/assets/images/mountain_bg.png');
+
+  return (
+    <TouchableOpacity
+      style={stylesRecommendedSection.bookCard}
+      activeOpacity={0.85}
+      onPress={onPress}
+    >
+      {/* Cover image — occupies upper ~65% */}
+      <ImageBackground
+        source={coverSource}
+        style={stylesRecommendedSection.bookCover}
+        imageStyle={stylesRecommendedSection.bookCoverImage}
+        resizeMode="cover"
+      >
+        <View style={stylesRecommendedSection.bookBadge}>
+          <Text style={stylesRecommendedSection.bookBadgeText}>BOOK</Text>
+        </View>
+      </ImageBackground>
+
+      {/* Info — occupies lower ~35% */}
+      <View style={stylesRecommendedSection.bookInfo}>
+        <Text style={stylesRecommendedSection.bookTitle} numberOfLines={2}>
+          {item.title || 'Untitled'}
+        </Text>
+        <View style={stylesRecommendedSection.bookFooter}>
+          <Text style={stylesRecommendedSection.bookAuthor} numberOfLines={1}>
+            {item.author || 'Dr. Swatantra Jain'}
+          </Text>
+          <Bookmark
+            color={Colors.textSecondary}
+            size={15}
+            strokeWidth={1.5}
+          />
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+};
+
+// ─── Article Recommendation Card ─────────────────────────
+const ArticleRecommendationCard = ({
+  item,
+  onPress,
+}: {
+  item: LibraryItem;
+  onPress: () => void;
+}) => {
+  const thumbSource = item.coverUrl
+    ? { uri: item.coverUrl }
+    : require('@/assets/images/quotes_background.png');
+
+  return (
+    <TouchableOpacity
+      style={stylesRecommendedSection.articleCard}
+      activeOpacity={0.85}
+      onPress={onPress}
+    >
+      {/* Left side — text content */}
+      <View style={stylesRecommendedSection.articleTextCol}>
+        <View style={stylesRecommendedSection.articleBadge}>
+          <Text style={stylesRecommendedSection.articleBadgeText}>ARTICLE</Text>
+        </View>
+        <Text style={stylesRecommendedSection.articleTitle} numberOfLines={2}>
+          {item.title || 'Untitled'}
+        </Text>
+        <Text style={stylesRecommendedSection.articleMeta}>
+          {item.readTime ? `${item.readTime} min read` : '5 min read'}
+        </Text>
+      </View>
+
+      {/* Right side — thumbnail + bookmark */}
+      <View style={stylesRecommendedSection.articleRightCol}>
+        <Bookmark
+          color={Colors.textSecondary}
+          size={14}
+          strokeWidth={1.5}
+        />
+        <Image
+          source={thumbSource}
+          style={stylesRecommendedSection.articleThumb}
+          resizeMode="cover"
+        />
+      </View>
+    </TouchableOpacity>
+  );
+};
+
+// ─── Main Section ────────────────────────────────────────
+export const RecommendedSection = ({
+  content,
+  onViewAll,
+  onPressBook,
+  onPressArticle,
+}: RecommendedSectionProps) => {
+  // Pick the first BOOK for the featured card
+  const featuredBook = content.find((i) => i.type === 'BOOK') || content[0];
+
+  // Pick up to 3 articles (or non-featured items) for the right column
+  const articles = content
+    .filter((i) => i.id !== featuredBook?.id)
+    .slice(0, 3);
+
+  if (!featuredBook && articles.length === 0) {
+    return null; // nothing to show
+  }
+
+  return (
+    <View style={stylesRecommendedSection.section}>
+      {/* Header row */}
+      <View style={stylesRecommendedSection.headerRow}>
+        <Text style={stylesRecommendedSection.sectionHeading}>Recommended for You</Text>
+        <TouchableOpacity
+          onPress={onViewAll}
+          style={stylesRecommendedSection.viewAllBtn}
+          activeOpacity={0.7}
+        >
+          <Text style={stylesRecommendedSection.viewAllText}>View all</Text>
+          <ChevronRight
+            color={Colors.accent}
+            size={14}
+            strokeWidth={2}
+          />
+        </TouchableOpacity>
+      </View>
+
+      {/* Two-column grid */}
+      <View style={stylesRecommendedSection.grid}>
+        {/* Left — Featured Book */}
+        <View style={{ width: BOOK_COL_WIDTH }}>
+          {featuredBook && (
+            <FeaturedBookCard
+              item={featuredBook}
+              onPress={() => onPressBook(featuredBook)}
+            />
+          )}
+        </View>
+
+        {/* Right — Articles stack */}
+        <View style={stylesRecommendedSection.articleColumn}>
+          {articles.map((item) => (
+            <ArticleRecommendationCard
+              key={item.id}
+              item={item}
+              onPress={() => onPressArticle(item)}
+            />
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+};
+
+// ─── Styles ──────────────────────────────────────────────
+const BOOK_CARD_HEIGHT = 240;
+const ARTICLE_GAP = 7;
+// Each article card height = (bookCardHeight - 2 * gap) / 3
+const ARTICLE_CARD_HEIGHT = (BOOK_CARD_HEIGHT - ARTICLE_GAP * 2) / 3;
+
+const stylesRecommendedSection = StyleSheet.create({
+  // Section wrapper
+  section: {
+    marginBottom: Spacing.lg,
+  },
+
+  // Header
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: HORIZONTAL_PADDING,
+    marginBottom: 16,
+  },
+  sectionHeading: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: Colors.primary,
+    fontFamily: 'serif',
+  },
+  viewAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  viewAllText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: Colors.accent,
+  },
+
+  // Grid
+  grid: {
+    flexDirection: 'row',
+    paddingHorizontal: HORIZONTAL_PADDING,
+    gap: COLUMN_GAP,
+  },
+
+  // ─── Book Card ──────────────────────────────────────
+  bookCard: {
+    height: BOOK_CARD_HEIGHT,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: 'hidden',
+    ...Shadows.soft,
+  },
+  bookCover: {
+    flex: 0.65,
+    justifyContent: 'flex-start',
+    padding: 10,
+  },
+  bookCoverImage: {
+    borderTopLeftRadius: 15,
+    borderTopRightRadius: 15,
+  },
+  bookBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  bookBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  bookInfo: {
+    flex: 0.35,
+    padding: 12,
+    justifyContent: 'space-between',
+  },
+  bookTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.primary,
+    fontFamily: 'serif',
+    lineHeight: 19,
+  },
+  bookFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  bookAuthor: {
+    fontSize: 10,
+    color: Colors.textSecondary,
+    flex: 1,
+    marginRight: 6,
+  },
+
+  // ─── Article Column ─────────────────────────────────
+  articleColumn: {
+    flex: 1,
+    height: BOOK_CARD_HEIGHT,
+    justifyContent: 'space-between',
+    gap: ARTICLE_GAP,
+  },
+
+  // ─── Article Card ───────────────────────────────────
+  articleCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    ...Shadows.soft,
+  },
+  articleTextCol: {
+    flex: 1,
+    paddingRight: 6,
+    justifyContent: 'center',
+  },
+  articleBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginBottom: 3,
+  },
+  articleBadgeText: {
+    color: '#4F6DC5',
+    fontSize: 8,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  articleTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.primary,
+    lineHeight: 16,
+    marginBottom: 2,
+  },
+  articleMeta: {
+    fontSize: 10,
+    color: Colors.textSecondary,
+  },
+  articleRightCol: {
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    height: '100%',
+    paddingVertical: 2,
+  },
+  articleThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: 6,
+  },
+});
+
+export const LetItGoCard = React.memo(LetItGoCardComponent);
