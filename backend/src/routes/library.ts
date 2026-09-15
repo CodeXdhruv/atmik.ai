@@ -235,4 +235,12 @@ library.delete('/categories/:id', async (c) => {
   }
 });
 
+library.get('/quotes', async (c) => {
+  const result = await c.env.DB.prepare(
+    'SELECT * FROM QuotesPool ORDER BY createdAt DESC'
+  ).all();
+
+  return c.json(result.results);
+});
+
 export default library;

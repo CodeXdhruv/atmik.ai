@@ -8,23 +8,32 @@ const admin = new Hono<{ Bindings: Bindings, Variables: { user: any } }>();
 admin.use('*', async (c, next) => {
   const authHeader = c.req.header('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return c.json({ error: 'Unauthorized' }, 401);
+    return c.json({ error: 'Unauthorized', message: 'Missing or invalid Authorization header' }, 401);
   }
 
   const token = authHeader.split('Bearer ')[1];
-  const payload = await verifyFirebaseToken(token, c.env.FIREBASE_PROJECT_ID);
+  let payload;
+  try {
+    payload = await verifyFirebaseToken(token, c.env.FIREBASE_PROJECT_ID);
+  } catch (err: any) {
+    return c.json({ error: 'Unauthorized', message: err.message }, 401);
+  }
 
   if (!payload || !payload.sub) {
-    return c.json({ error: 'Invalid or expired token' }, 401);
+    return c.json({ error: 'Invalid or expired token', message: 'Token payload missing sub claim' }, 401);
   }
 
   // Check if user has ADMIN role in D1 database
-  const { results } = await c.env.DB.prepare('SELECT role FROM User WHERE firebaseUid = ?')
-    .bind(payload.sub)
-    .all();
+  try {
+    const { results } = await c.env.DB.prepare('SELECT role FROM User WHERE firebaseUid = ?')
+      .bind(payload.sub)
+      .all();
 
-  if (results.length === 0 || results[0].role !== 'ADMIN') {
-    return c.json({ error: 'Forbidden: Admins only' }, 403);
+    if (results.length === 0 || results[0].role !== 'ADMIN') {
+      return c.json({ error: 'Forbidden', message: 'Forbidden: Admins only' }, 403);
+    }
+  } catch (dbErr: any) {
+    return c.json({ error: 'Database Error', message: dbErr.message }, 500);
   }
 
   c.set('user', payload);
@@ -152,6 +161,54 @@ admin.post('/notify', async (c) => {
 
     const data = await response.json();
     return c.json({ success: true, message: `Push notifications sent to ${tokens.length} devices`, expoData: data });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+admin.post('/quotes/upload', async (c) => {
+  try {
+    const quotes = await c.req.json();
+    if (!Array.isArray(quotes)) {
+      return c.json({ error: 'Expected an array of quotes' }, 400);
+    }
+
+    // 1. Delete old quotes JSON file(s) from R2 bucket and upload the new JSON file
+    try {
+      if (c.env.R2) {
+        const objectsList = await c.env.R2.list({ prefix: 'quotes/' });
+        for (const obj of objectsList.objects) {
+          await c.env.R2.delete(obj.key);
+        }
+
+        const R2_KEY = 'quotes/dr_swatantra_jain_quotes.json';
+        await c.env.R2.put(R2_KEY, JSON.stringify(quotes, null, 2), {
+          httpMetadata: { contentType: 'application/json' },
+        });
+      }
+    } catch (r2Error) {
+      console.error('R2 Quotes deletion/upload error:', r2Error);
+    }
+
+    // 2. Clear old quotes entries in D1 database
+    await c.env.DB.prepare('DELETE FROM QuotesPool').run();
+
+    // 3. Insert new quotes into D1 database
+    const stmt = c.env.DB.prepare(
+      'INSERT INTO QuotesPool (id, text, author, createdAt) VALUES (?, ?, ?, ?)'
+    );
+
+    const batch = quotes.map((q: any) => 
+      stmt.bind(crypto.randomUUID(), q.text || q.quote, q.author || 'Dr. Swatantra Jain', new Date().toISOString())
+    );
+
+    // Cloudflare D1 has limits on batch sizes (e.g. 50 statements). Chunk the batches.
+    const CHUNK_SIZE = 50;
+    for (let i = 0; i < batch.length; i += CHUNK_SIZE) {
+      await c.env.DB.batch(batch.slice(i, i + CHUNK_SIZE));
+    }
+
+    return c.json({ success: true, count: batch.length, message: 'Old quotes deleted and new quotes updated successfully in R2 and D1.' });
   } catch (error: any) {
     return c.json({ error: error.message }, 500);
   }
