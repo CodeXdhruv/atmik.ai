@@ -24,7 +24,6 @@ const DEFAULT_CATEGORIES = [
   { id: 'all', label: 'All', icon: LayoutGrid },
   { id: 'book', label: 'Books', icon: Book },
   { id: 'article', label: 'Articles', icon: FileText },
-  { id: 'quote', label: 'Quotes', icon: QuoteIcon },
 ];
 
 const ICON_MAP: Record<string, React.ElementType> = {

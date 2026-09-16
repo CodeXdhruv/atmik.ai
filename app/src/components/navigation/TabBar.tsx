@@ -184,17 +184,13 @@ export const LotusButton = () => {
   const onSelectChat = () => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
     closeMenu();
-    setTimeout(() => {
-      router.push('/chat');
-    }, 300);
+    router.push('/chat');
   };
 
   const onSelectVoice = () => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
     closeMenu();
-    setTimeout(() => {
-      router.push('/voice' as any);
-    }, 300);
+    router.push('/voice' as any);
   };
 
   const chatParticles = Array.from({ length: 6 }).map((_, i) => (

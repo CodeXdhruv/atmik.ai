@@ -5,27 +5,28 @@ export class LocalNotificationService {
   static async requestPermissions() {
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('reminders', {
-        name: 'Daily Reminders',
+        name: 'Atmik AI Wellness & Reminders',
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#D9A05B',
+        sound: 'default',
       });
     }
     const { status } = await Notifications.requestPermissionsAsync();
     return status === 'granted';
   }
 
-  static async scheduleMorningForYou() {
+  // 1. Morning Alignment (8:30 AM) -> Chat with Atmik AI
+  static async scheduleMorningAlignment() {
     const hasPermission = await this.requestPermissions();
     if (!hasPermission) return;
 
-    // Schedule for 8:30 AM every day
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: '🌱 A moment for yourself',
-        body: 'What has pulled you away from yourself lately? Take a quick breath and let it go with Atmik.',
-        sound: 'default',
-        data: { type: 'REMINDER_FOR_YOU' }
+        title: '☀️ Start Your Morning with Atmik AI',
+        body: 'Set your intention for today. Have a quick voice or text conversation with Atmik AI to clear your mind!',
+        sound: true,
+        data: { route: '/chat', type: 'CHAT_ALIGNMENT' }
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
@@ -33,60 +34,79 @@ export class LocalNotificationService {
         minute: 30,
       },
     });
-    console.log('Scheduled morning For You notification for 8:30 AM');
+    console.log('Scheduled morning alignment notification for 8:30 AM');
   }
 
-  static async scheduleEveningReflection() {
+  // 2. Afternoon Inner Check-In (1:30 PM) -> Reflect Your Inner Self (Practice)
+  static async scheduleAfternoonReflection() {
     const hasPermission = await this.requestPermissions();
     if (!hasPermission) return;
 
-    // Schedule for 9:00 PM every day
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: '🌙 Your daily reflection is ready',
-        body: 'Before you rest, take a gentle look back at your day. Reflect and gain clarity.',
-        sound: 'default',
-        data: { type: 'REMINDER_TODAYS_REFLECTION' }
+        title: '🧘 Reflect Your Inner Self',
+        body: 'Pause for 2 minutes. Take a deep breath and explore your inner journey in Practice to realign your peace.',
+        sound: true,
+        data: { route: '/health', type: 'REFLECT_INNER_SELF' }
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour: 13,
+        minute: 30,
+      },
+    });
+    console.log('Scheduled afternoon reflection notification for 1:30 PM');
+  }
+
+  // 3. Evening Heart-to-Heart Voice Chat (6:30 PM) -> Voice Mode
+  static async scheduleEveningVoiceChat() {
+    const hasPermission = await this.requestPermissions();
+    if (!hasPermission) return;
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '🎙️ Atmik AI is Listening',
+        body: 'How was your day? Speak your heart out in a gentle 1-on-1 voice conversation with Atmik.',
+        sound: true,
+        data: { route: '/voice', type: 'VOICE_CHAT' }
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour: 18,
+        minute: 30,
+      },
+    });
+    console.log('Scheduled evening voice chat notification for 6:30 PM');
+  }
+
+  // 4. Nightly Peaceful Unwind (9:30 PM) -> Daily Reflection
+  static async scheduleNightlyUnwind() {
+    const hasPermission = await this.requestPermissions();
+    if (!hasPermission) return;
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '🌙 Evening Inner Peace & Reflections',
+        body: 'Before you sleep, reflect on your thoughts and gain clarity with today’s inner reflection.',
+        sound: true,
+        data: { route: '/health', type: 'NIGHTLY_REFLECTION' }
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
         hour: 21,
-        minute: 0,
+        minute: 30,
       },
     });
-    console.log('Scheduled evening reflection notification for 9:00 PM');
-  }
-
-  static async scheduleRandomInnerJourney() {
-    const hasPermission = await this.requestPermissions();
-    if (!hasPermission) return;
-
-    // Schedule a random time between 12 PM and 5 PM
-    const hour = Math.floor(Math.random() * (17 - 12 + 1)) + 12;
-    const minute = Math.floor(Math.random() * 60);
-
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: '✨ Look Within',
-        body: 'Feeling overwhelmed or need someone to talk to? Atmik is here to guide your inner journey right now.',
-        sound: 'default',
-        data: { type: 'REMINDER_INNER_JOURNEY' }
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DAILY,
-        hour,
-        minute,
-      },
-    });
-    console.log(`Scheduled random inner journey nudge for ${hour}:${minute.toString().padStart(2, '0')}`);
+    console.log('Scheduled nightly unwind notification for 9:30 PM');
   }
 
   static async setupAllLocalReminders() {
     // Clear all existing scheduled notifications so we don't duplicate
     await Notifications.cancelAllScheduledNotificationsAsync();
     
-    await this.scheduleMorningForYou();
-    await this.scheduleEveningReflection();
-    await this.scheduleRandomInnerJourney();
+    await this.scheduleMorningAlignment();
+    await this.scheduleAfternoonReflection();
+    await this.scheduleEveningVoiceChat();
+    await this.scheduleNightlyUnwind();
   }
 }

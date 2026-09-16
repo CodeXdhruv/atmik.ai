@@ -55,6 +55,21 @@ class DBService {
   }
 
   /**
+   * Fetch a specific reflection by content ID and type to check completion status
+   */
+  async getReflectionByContentId(contentId: string, type: string): Promise<ReflectionRecord | null> {
+    try {
+      const existingStr = await AsyncStorage.getItem(DB_KEY);
+      const existing: ReflectionRecord[] = existingStr ? JSON.parse(existingStr) : [];
+      const match = existing.find(r => r.contentId === contentId && r.type === type);
+      return match || null;
+    } catch (e) {
+      console.error('Failed to fetch reflection by contentId', e);
+      return null;
+    }
+  }
+
+  /**
    * Fetch paginated history (for Your Reflections screen)
    */
   async getReflectionsHistory(page: number = 1, limit: number = 20): Promise<ReflectionRecord[]> {

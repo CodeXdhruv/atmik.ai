@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Share, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Share, Keyboard, LayoutAnimation, UIManager } from 'react-native';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSequence, withSpring, withDelay, Easing, interpolate, runOnJS, Extrapolation } from 'react-native-reanimated';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Spacing, Radius, Shadows } from '@/constants/theme';
@@ -7,17 +11,18 @@ import { dbService, ReflectionRecord } from '../../services/db';
 import { MessageCircle, CircleDot, Star, ArrowRight, Heart } from 'lucide-react-native';
 
 type ExperienceData = {
-  id: string;
-  theme: string;
-  questionType: string;
-  responseType: string;
+  id?: string;
+  theme?: string;
+  questionType?: string;
+  responseType?: string;
   question: string;
   helperText: string;
   backHelperText: string;
   options?: string[];
-  responseConfiguration: {
+  responseConfiguration?: {
     atmik_response_template: string;
   };
+  responseTemplate?: string;
 };
 
 // Sub-component: Typewriter
@@ -66,6 +71,17 @@ const TodaysReflectionCardComponent = ({ data }: { data: ExperienceData }) => {
   // Animation values
   const flipValue = useSharedValue(0); // 0 = front, 1 = back
   const pressScale = useSharedValue(1);
+
+  useEffect(() => {
+    const checkCompletion = async () => {
+      const record = await dbService.getReflectionByContentId(data.id || 'daily_reflection', 'todays_reflection');
+      if (record) {
+        setStage('done');
+        flipValue.value = 1;
+      }
+    };
+    checkCompletion();
+  }, [data.id, flipValue]);
 
   const flipToBack = () => {
     pressScale.value = withSequence(
@@ -118,8 +134,8 @@ const TodaysReflectionCardComponent = ({ data }: { data: ExperienceData }) => {
 
   const handleSubmit = () => {
     Keyboard.dismiss();
-    let response = data.responseConfiguration.atmik_response_template;
-    if (data.responseType === 'choice') {
+    let response = data.responseTemplate || data.responseConfiguration?.atmik_response_template || "Thank you for reflecting.";
+    if (data.responseType === 'choice' || data.options) {
       response = response.replace('{choice}', userText.toLowerCase());
     }
     setAtmikResponse(response);
@@ -130,8 +146,8 @@ const TodaysReflectionCardComponent = ({ data }: { data: ExperienceData }) => {
     if (save) {
       await dbService.saveReflection({
         type: 'todays_reflection',
-        contentId: data.id,
-        theme: data.theme,
+        contentId: data.id || 'daily_reflection',
+        theme: data.theme || 'Daily',
         question: data.question,
         userResponse: userText,
         atmikResponse: atmikResponse,
@@ -163,7 +179,7 @@ const TodaysReflectionCardComponent = ({ data }: { data: ExperienceData }) => {
               
               {stage === 'input' && (
                 <View style={stylesTodaysReflectionCard.inputArea}>
-                  {data.responseType === 'text' ? (
+                  {data.responseType === 'text' || !data.options || data.options.length === 0 ? (
                     <TextInput
                       style={stylesTodaysReflectionCard.textInput}
                       placeholder="Write whatever comes to mind..."
@@ -411,8 +427,9 @@ const stylesTodaysReflectionCard = StyleSheet.create({
 });
 
 type LookWithinData = {
-  id: string;
-  prompt: string;
+  id?: string;
+  prompt?: string;
+  question?: string;
   options: string[];
   responses: Record<string, string>;
 };
@@ -424,10 +441,25 @@ const LookWithinCardComponent = ({ data }: { data: LookWithinData }) => {
 
   const expandProgress = useSharedValue(0);
 
+  useEffect(() => {
+    const checkCompletion = async () => {
+      const record = await dbService.getReflectionByContentId(data.id || 'look_within_daily', 'look_within');
+      if (record) {
+        setSaved(true);
+        setSelected(record.userResponse || null);
+      }
+    };
+    checkCompletion();
+  }, [data.id]);
+
   const handleExpand = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     if (!expanded) {
       setExpanded(true);
       expandProgress.value = withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) });
+    } else {
+      setExpanded(false);
+      expandProgress.value = withTiming(0, { duration: 400, easing: Easing.inOut(Easing.quad) });
     }
   };
 
@@ -439,8 +471,8 @@ const LookWithinCardComponent = ({ data }: { data: LookWithinData }) => {
     if (selected && !saved) {
       await dbService.saveReflection({
         type: 'look_within',
-        contentId: data.id,
-        question: data.prompt,
+        contentId: data.id || 'look_within_daily',
+        question: data.prompt || data.question || '',
         userResponse: selected,
         atmikResponse: data.responses[selected],
       });
@@ -459,8 +491,7 @@ const LookWithinCardComponent = ({ data }: { data: LookWithinData }) => {
   };
 
   const containerStyle = useAnimatedStyle(() => {
-    const height = interpolate(expandProgress.value, [0, 1], [100, 320]); // Approximate expanded height
-    return { height };
+    return {}; 
   });
   
   const expandedContentStyle = useAnimatedStyle(() => {
@@ -474,7 +505,7 @@ const LookWithinCardComponent = ({ data }: { data: LookWithinData }) => {
     <Animated.View style={[stylesLookWithinCard.card, containerStyle]}>
       <TouchableOpacity 
         style={stylesLookWithinCard.header} 
-        activeOpacity={expanded ? 1 : 0.7} 
+        activeOpacity={0.7} 
         onPress={handleExpand}
       >
         <View style={stylesLookWithinCard.headerLeft}>
@@ -489,7 +520,7 @@ const LookWithinCardComponent = ({ data }: { data: LookWithinData }) => {
 
       {expanded && (
         <Animated.View style={[stylesLookWithinCard.expandedContent, expandedContentStyle]}>
-          <Text style={stylesLookWithinCard.prompt}>{data.prompt}</Text>
+          <Text style={stylesLookWithinCard.prompt}>{data.prompt || data.question}</Text>
           
           <View style={stylesLookWithinCard.optionsGrid}>
             {data.options.map((opt) => (
@@ -699,8 +730,10 @@ const stylesTalkToAtmikCard = StyleSheet.create({
 });
 
 type WisdomData = {
-  id: string;
-  text: string;
+  id?: string;
+  text?: string;
+  quote?: string;
+  author?: string;
 };
 
 export const ThoughtToCarryCard = ({ data }: { data: WisdomData }) => {
@@ -708,10 +741,24 @@ export const ThoughtToCarryCard = ({ data }: { data: WisdomData }) => {
   const [saved, setSaved] = useState(false);
   const expandProgress = useSharedValue(0);
 
+  useEffect(() => {
+    const checkCompletion = async () => {
+      const record = await dbService.getReflectionByContentId(data.id || 'thought_to_carry', 'wisdom');
+      if (record) {
+        setSaved(true);
+      }
+    };
+    checkCompletion();
+  }, [data.id]);
+
   const handleExpand = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     if (!expanded) {
       setExpanded(true);
       expandProgress.value = withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) });
+    } else {
+      setExpanded(false);
+      expandProgress.value = withTiming(0, { duration: 400, easing: Easing.inOut(Easing.quad) });
     }
   };
 
@@ -719,8 +766,8 @@ export const ThoughtToCarryCard = ({ data }: { data: WisdomData }) => {
     if (!saved) {
       await dbService.saveReflection({
         type: 'wisdom',
-        contentId: data.id,
-        userResponse: data.text, // store the wisdom text for easy display later
+        contentId: data.id || 'thought_to_carry',
+        userResponse: data.quote || data.text || '', // store the wisdom text for easy display later
       });
       setSaved(true);
     }
@@ -729,7 +776,7 @@ export const ThoughtToCarryCard = ({ data }: { data: WisdomData }) => {
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `"${data.text}" — Atmik AI`,
+        message: `"${data.quote || data.text}" — ${data.author || 'Atmik AI'}`,
       });
     } catch (error) {
       console.log(error);
@@ -737,8 +784,7 @@ export const ThoughtToCarryCard = ({ data }: { data: WisdomData }) => {
   };
 
   const containerStyle = useAnimatedStyle(() => {
-    const height = interpolate(expandProgress.value, [0, 1], [76, 220]);
-    return { height };
+    return {};
   });
   
   const expandedContentStyle = useAnimatedStyle(() => {
@@ -752,7 +798,7 @@ export const ThoughtToCarryCard = ({ data }: { data: WisdomData }) => {
     <Animated.View style={[stylesThoughtToCarryCard.card, containerStyle]}>
       <TouchableOpacity 
         style={stylesThoughtToCarryCard.header} 
-        activeOpacity={expanded ? 1 : 0.7} 
+        activeOpacity={0.7} 
         onPress={handleExpand}
       >
         <View style={stylesThoughtToCarryCard.headerLeft}>
@@ -770,7 +816,7 @@ export const ThoughtToCarryCard = ({ data }: { data: WisdomData }) => {
       {expanded && (
         <Animated.View style={[stylesThoughtToCarryCard.expandedContent, expandedContentStyle]}>
           <View style={stylesThoughtToCarryCard.wisdomContainer}>
-            <Text style={stylesThoughtToCarryCard.wisdomText}>"{data.text}"</Text>
+            <Text style={stylesThoughtToCarryCard.wisdomText}>"{data.quote || data.text}"</Text>
           </View>
           
           <View style={stylesThoughtToCarryCard.actionRow}>
@@ -870,6 +916,13 @@ const stylesThoughtToCarryCard = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: Colors.textSecondary,
+  },
+  authorText: {
+    fontSize: 14,
+    color: '#8A7E6E',
+    marginTop: 8,
+    fontStyle: 'italic',
+    textAlign: 'right',
   }
 });
 

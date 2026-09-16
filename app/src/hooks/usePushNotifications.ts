@@ -4,13 +4,15 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import auth from '@react-native-firebase/auth';
+import { useRouter } from 'expo-router';
 import { LocalNotificationService } from '../services/LocalNotificationService';
 
 export function usePushNotifications() {
+  const router = useRouter();
   const [expoPushToken, setExpoPushToken] = useState<string | undefined>();
   const [notification, setNotification] = useState<Notifications.Notification | false>(false);
-  const notificationListener = useRef<Notifications.Subscription>();
-  const responseListener = useRef<Notifications.Subscription>();
+  const notificationListener = useRef<Notifications.Subscription | null>(null);
+  const responseListener = useRef<Notifications.Subscription | null>(null);
 
   useEffect(() => {
     // Set handler inside the effect so it's stable across Fast Refresh
@@ -19,16 +21,13 @@ export function usePushNotifications() {
         shouldShowAlert: true,
         shouldPlaySound: true,
         shouldSetBadge: false,
+        shouldShowBanner: true,
+        shouldShowList: true,
       }),
     });
 
     registerForPushNotificationsAsync().then(token => {
       setExpoPushToken(token);
-      // If we have a token and user is logged in, sync it to our backend
-      const currentUser = auth().currentUser;
-      if (token && currentUser) {
-        syncPushTokenToBackend(currentUser.uid, token);
-      }
       
       // Also setup all the local daily reminders once we have push permissions
       LocalNotificationService.setupAllLocalReminders().catch(console.error);
@@ -40,7 +39,14 @@ export function usePushNotifications() {
 
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
       console.log('User tapped notification:', response);
-      // Here you could route the user to a specific screen based on response.notification.request.content.data
+      const targetRoute = response.notification.request.content.data?.route;
+      if (targetRoute) {
+        try {
+          router.push(targetRoute as any);
+        } catch (e) {
+          console.error("Failed to navigate from notification tap:", e);
+        }
+      }
     });
 
     return () => {
@@ -50,6 +56,23 @@ export function usePushNotifications() {
       responseListener.current?.remove();
     };
   }, []);
+
+  // Sync push token whenever token is generated or authentication state changes
+  useEffect(() => {
+    const unsubscribe = auth().onAuthStateChanged(user => {
+      if (user && expoPushToken) {
+        syncPushTokenToBackend(user.uid, expoPushToken);
+      }
+    });
+
+    // Also try immediately in case the initial event fired before we mounted
+    const currentUser = auth().currentUser;
+    if (currentUser && expoPushToken) {
+      syncPushTokenToBackend(currentUser.uid, expoPushToken);
+    }
+
+    return () => unsubscribe();
+  }, [expoPushToken]);
 
   return {
     expoPushToken,

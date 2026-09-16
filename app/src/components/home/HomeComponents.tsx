@@ -606,7 +606,7 @@ const ArticleRecommendationCard = ({
 }) => {
   const thumbSource = item.coverUrl
     ? { uri: item.coverUrl }
-    : require('@/assets/images/quotes_background.png');
+    : require('@/assets/images/quotes_background.webp');
 
   return (
     <TouchableOpacity

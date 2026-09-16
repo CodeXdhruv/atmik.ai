@@ -1,6 +1,6 @@
-import React from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, ScrollView, Dimensions } from 'react-native';
-import { Image, ImageBackground } from 'expo-image';
+import React, { useEffect } from 'react';
+import { View, StyleSheet, TouchableOpacity, Text, ScrollView, Dimensions, Keyboard } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Clock, User } from 'lucide-react-native';
@@ -12,6 +12,15 @@ const { width } = Dimensions.get('window');
 export default function ArticleScreen() {
   const router = useRouter();
   const { title, description, coverUrl, author, readTime } = useLocalSearchParams();
+
+  // Dismiss any active keyboard when opening article
+  useEffect(() => {
+    Keyboard.dismiss();
+  }, []);
+
+  const validCoverUrl = (typeof coverUrl === 'string' && coverUrl.trim().length > 0 && coverUrl !== 'null' && coverUrl !== 'undefined')
+    ? coverUrl.trim()
+    : 'https://images.unsplash.com/photo-1518655048521-f130df041f66?q=80&w=2000';
 
   const htmlContent = typeof description === 'string' && description.trim() !== '' 
     ? description 
@@ -55,12 +64,15 @@ export default function ArticleScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
-        {/* Parallax Header Image */}
-        <ImageBackground 
-          source={{ uri: (typeof coverUrl === 'string' && coverUrl) ? coverUrl : 'https://images.unsplash.com/photo-1518655048521-f130df041f66?q=80&w=2000' }}
-          style={styles.headerImage}
-        >
+      <ScrollView showsVerticalScrollIndicator={false} bounces={false} keyboardShouldPersistTaps="handled">
+        {/* Header Image Container with High-Performance expo-image */}
+        <View style={styles.headerContainer}>
+          <Image 
+            source={{ uri: validCoverUrl }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            transition={300}
+          />
           <LinearGradient
             colors={['rgba(0,0,0,0.5)', 'transparent', 'rgba(0,0,0,0.8)']}
             style={styles.gradient}
@@ -88,7 +100,7 @@ export default function ArticleScreen() {
               </View>
             </View>
           </LinearGradient>
-        </ImageBackground>
+        </View>
 
         {/* Article Body */}
         <View style={styles.articleBody}>
@@ -108,9 +120,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FAFBFC',
   },
-  headerImage: {
+  headerContainer: {
     width: width,
     height: width * 1.1, // Tall engaging header
+    position: 'relative',
   },
   gradient: {
     flex: 1,

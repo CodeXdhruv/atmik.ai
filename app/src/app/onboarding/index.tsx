@@ -34,7 +34,7 @@ export default function OnboardingScreen() {
         {/* Screen 1 */}
         <View style={{ width, height }}>
           <ImageBackground
-            source={require('@/assets/images/onboarding_first.png')}
+            source={require('@/assets/images/onboarding_first.webp')}
             style={styles.backgroundImage}
             resizeMode="cover"
           >
@@ -60,7 +60,7 @@ export default function OnboardingScreen() {
         {/* Screen 2 */}
         <View style={{ width, height }}>
           <ImageBackground
-            source={require('@/assets/images/onboarding_second.png')}
+            source={require('@/assets/images/onboarding_second.webp')}
             style={styles.backgroundImage}
             resizeMode="cover"
           >
@@ -86,7 +86,7 @@ export default function OnboardingScreen() {
         {/* Screen 3 */}
         <View style={{ width, height }}>
           <ImageBackground
-            source={require('@/assets/images/onboarding_third.png')}
+            source={require('@/assets/images/onboarding_third.webp')}
             style={styles.backgroundImage}
             resizeMode="cover"
           >

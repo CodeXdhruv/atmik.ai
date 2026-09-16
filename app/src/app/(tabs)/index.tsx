@@ -47,7 +47,7 @@ const HeroCarousel = ({ quotes }: { quotes: any[] }) => {
         {quotes.map((item, index) => (
           <View key={item.id} style={[styles.heroCard, { width: width - Spacing.lg * 2 }]}>
             <ImageBackground
-              source={require('@/assets/images/quotes_background.png')}
+              source={require('@/assets/images/quotes_background.webp')}
               style={styles.heroBackground}
               imageStyle={{ borderRadius: Radius.lg - 0.5, resizeMode: 'cover' }}
             >

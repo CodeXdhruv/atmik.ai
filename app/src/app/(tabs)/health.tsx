@@ -14,21 +14,36 @@ import {
   TodaysReflectionCard,
 } from '@/components/journey/JourneyComponents';
 
+import { apiService } from '@/services/api';
+
 export default function JourneyScreen() {
   const [todaysReflectionData, setTodaysReflectionData] = useState<any>(null);
   const [lookWithinData, setLookWithinData] = useState<any>(null);
   const [thoughtData, setThoughtData] = useState<any>(null);
 
-  // Load the daily content from the JSON engine
+  // Load daily content from backend API (or fallback to local asset)
   useFocusEffect(
     useCallback(() => {
-      // In a real implementation, this would use AsyncStorage to pick stable IDs for the day.
-      // For now, we pick the first available one to demonstrate the UI.
-      if (!todaysReflectionData) {
-        setTodaysReflectionData(innerJourneyData.todaysReflection[0]);
-        setLookWithinData(innerJourneyData.lookWithin[0]);
-        setThoughtData(innerJourneyData.thoughtsToCarry[0]);
+      let isMounted = true;
+      async function loadJourney() {
+        const dynamicJourney = await apiService.fetchTodaysJourney();
+
+        if (isMounted) {
+          if (dynamicJourney) {
+            setTodaysReflectionData({ ...dynamicJourney.todaysReflection, id: dynamicJourney.id });
+            setLookWithinData({ ...dynamicJourney.lookWithin, id: dynamicJourney.id });
+            setThoughtData({ ...dynamicJourney.thoughtToCarry, id: dynamicJourney.id });
+          } else {
+            // Fallback to local default bundle
+            setTodaysReflectionData(innerJourneyData.todaysReflection[0]);
+            setLookWithinData(innerJourneyData.lookWithin[0]);
+            setThoughtData(innerJourneyData.thoughtsToCarry[0]);
+          }
+        }
       }
+
+      loadJourney();
+      return () => { isMounted = false; };
     }, [])
   );
 

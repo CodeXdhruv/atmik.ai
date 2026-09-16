@@ -3,6 +3,13 @@ import { API_BASE_URL } from '../api/client';
 import { requestRecordingPermissionsAsync, setAudioModeAsync, createAudioPlayer, useAudioRecorder, RecordingPresets, AudioPlayer } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
 
+export interface ChatMessage {
+  id: string;
+  sender: 'user' | 'ai';
+  text: string;
+  isStreaming?: boolean;
+}
+
 interface VoiceMessage {
   type: 'transcription' | 'text_stream' | 'tts_audio' | 'generation_done' | 'error';
   text?: string;
@@ -16,7 +23,14 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
   const [isRecording, setIsRecording] = useState(false);
   const [transcription, setTranscription] = useState('');
   const [aiText, setAiText] = useState('');
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  const clearMessages = useCallback(() => {
+    setMessages([]);
+    setTranscription('');
+    setAiText('');
+  }, []);
   
   const wsRef = useRef<WebSocket | null>(null);
   const langRef = useRef(lang);
@@ -78,12 +92,39 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
         switch (data.type) {
           case 'transcription':
             console.log('🗣️ [VoiceChat] Received Transcription (STT):', data.text);
-            setTranscription(data.text || '');
+            const userText = data.text || '';
+            setTranscription(userText);
             setAiText(''); // Clear previous AI text
+            
+            const userMsgId = Date.now().toString();
+            const aiMsgId = (Date.now() + 1).toString();
+            setMessages((prev) => [
+              ...prev,
+              { id: userMsgId, sender: 'user', text: userText },
+              { id: aiMsgId, sender: 'ai', text: '', isStreaming: true }
+            ]);
             break;
           case 'text_stream':
             console.log('🗣️ [VoiceChat] Received AI Text Stream chunk');
-            setAiText((prev) => prev + data.text);
+            const chunk = data.text || '';
+            setAiText((prev) => prev + chunk);
+            setMessages((prev) => {
+              if (prev.length === 0) {
+                return [{ id: Date.now().toString(), sender: 'ai', text: chunk, isStreaming: true }];
+              }
+              const next = [...prev];
+              const lastIdx = next.length - 1;
+              const lastMsg = next[lastIdx];
+              if (lastMsg && lastMsg.sender === 'ai') {
+                next[lastIdx] = {
+                  ...lastMsg,
+                  text: lastMsg.text + chunk
+                };
+              } else {
+                next.push({ id: Date.now().toString(), sender: 'ai', text: chunk, isStreaming: true });
+              }
+              return next;
+            });
             break;
           case 'tts_audio':
             console.log('🗣️ [VoiceChat] Received Audio Response (TTS)');
@@ -93,7 +134,19 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
             break;
           case 'generation_done':
             console.log('🗣️ [VoiceChat] AI Response Generation Done');
-            // Generation finished
+            setMessages((prev) => {
+              if (prev.length === 0) return prev;
+              const next = [...prev];
+              const lastIdx = next.length - 1;
+              const lastMsg = next[lastIdx];
+              if (lastMsg && lastMsg.sender === 'ai') {
+                next[lastIdx] = {
+                  ...lastMsg,
+                  isStreaming: false
+                };
+              }
+              return next;
+            });
             break;
           case 'error':
             console.error('🗣️ [VoiceChat] Server Error:', data.message);
@@ -107,12 +160,14 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
 
     ws.onclose = () => {
       setIsConnected(false);
-      // Auto reconnect could be implemented here
+      console.log('🗣️ [VoiceChat] WebSocket closed, auto-reconnecting in background...');
+      setTimeout(() => {
+        connectWebSocket();
+      }, 1500);
     };
 
     ws.onerror = (err) => {
-      console.error("WebSocket error", err);
-      setError("Connection lost");
+      console.warn("🗣️ [VoiceChat] WebSocket connection state changed (will auto-reconnect on tap)");
     };
 
     wsRef.current = ws;
@@ -212,6 +267,8 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
   const startRecording = async () => {
     try {
       console.log('🗣️ [VoiceChat] startRecording called');
+      setError(null);
+      setTranscription(''); // Clear previous transcription text so it doesn't show in "Listening..." bubble
       
       // Auto-reconnect if the connection was dropped
       if (wsRef.current?.readyState !== WebSocket.OPEN && wsRef.current?.readyState !== WebSocket.CONNECTING) {
@@ -219,7 +276,13 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
         connectWebSocket();
       }
 
-      await requestRecordingPermissionsAsync();
+      const permResult = await requestRecordingPermissionsAsync();
+      if (!permResult.granted) {
+        console.warn('🗣️ [VoiceChat] Microphone permission denied');
+        setError('Microphone permission required. Please allow mic access.');
+        return;
+      }
+
       await setAudioModeAsync({
         allowsRecording: true,
         playsInSilentMode: true,
@@ -267,6 +330,8 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
     isRecording,
     transcription,
     aiText,
+    messages,
+    clearMessages,
     error,
     startRecording,
     stopRecording,
