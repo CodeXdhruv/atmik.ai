@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
 import { Image, ImageBackground } from 'expo-image';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSequence, withRepeat, withDelay, Easing, runOnJS } from 'react-native-reanimated';
@@ -7,6 +7,7 @@ import { Wind, Check, Bookmark, ChevronRight } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Spacing, Radius, Shadows } from '@/constants/theme';
 import forYouData from '../../../assets/for_you_today.json';
+import { apiService } from '../../services/api';
 
 // ── Design tokens ──────────────────────────────────────────────
 const CARD_BG    = '#F9F3EA';   
@@ -154,7 +155,7 @@ const FloatingWord = ({
 // ── Main Component ─────────────────────────────────────────────
 type Stage = 'loading' | 'let_go' | 'make_space' | 'completed';
 
-function LetItGoCardComponent() {
+function LetItGoCardComponent({ experienceData }: { experienceData?: any }) {
   const [stage, setStage] = useState<Stage>('loading');
   const [experience, setExperience] = useState<MicroExperience | null>(null);
   const [experienceIndex, setExperienceIndex] = useState(0);
@@ -169,46 +170,61 @@ function LetItGoCardComponent() {
   const contentOpacity = useSharedValue(0);
   const completionScale = useSharedValue(0.95);
 
-  // Load experience on mount
-  useEffect(() => {
-    const loadExperience = async () => {
-      try {
-        const historyStr = await AsyncStorage.getItem(HISTORY_KEY);
-        const completedIds: string[] = historyStr ? JSON.parse(historyStr) : [];
-        
-        const experiences = forYouData.experiences as MicroExperience[];
-        const available = experiences.filter(exp => !completedIds.includes(exp.id));
-        
-        let selected: MicroExperience;
-        let selectedIndex: number;
-        
-        if (available.length > 0) {
-          // Select first available (or could be random/day-of-year)
-          selected = available[0];
-          selectedIndex = experiences.findIndex(e => e.id === selected.id);
-        } else {
-          // Fallback if all are completed: clear history and start over
-          await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify([]));
-          selected = experiences[0];
-          selectedIndex = 0;
-        }
-
-        setExperience(selected);
-        setExperienceIndex(selectedIndex);
-        setStage('let_go');
-        contentOpacity.value = withTiming(1, { duration: 600 });
-      } catch (error) {
-        // Fallback to first on error
-        const exps = forYouData.experiences as MicroExperience[];
-        setExperience(exps[0]);
+  // Load experience on mount & reset
+  const loadExperience = useCallback(async () => {
+    try {
+      // 1. Try fetching today's dynamic item from server API
+      const serverForYou = await apiService.fetchTodaysForYou();
+      if (serverForYou && serverForYou.question && Array.isArray(serverForYou.releaseOptions) && serverForYou.releaseOptions.length > 0) {
+        setExperience(serverForYou as MicroExperience);
         setExperienceIndex(0);
         setStage('let_go');
         contentOpacity.value = withTiming(1, { duration: 600 });
+        return;
       }
-    };
-    
-    loadExperience();
+
+      // 2. Fallback to local history / JSON assets if server unavailable or empty
+      const historyStr = await AsyncStorage.getItem(HISTORY_KEY);
+      const completedIds: string[] = historyStr ? JSON.parse(historyStr) : [];
+      
+      const experiences = forYouData.experiences as MicroExperience[];
+      const available = experiences.filter(exp => !completedIds.includes(exp.id));
+      
+      let selected: MicroExperience;
+      let selectedIndex: number;
+      
+      if (available.length > 0) {
+        selected = available[0];
+        selectedIndex = experiences.findIndex(e => e.id === selected.id);
+      } else {
+        await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify([]));
+        selected = experiences[0];
+        selectedIndex = 0;
+      }
+
+      setExperience(selected);
+      setExperienceIndex(selectedIndex);
+      setStage('let_go');
+      contentOpacity.value = withTiming(1, { duration: 600 });
+    } catch (error) {
+      const exps = forYouData.experiences as MicroExperience[];
+      setExperience(exps[0]);
+      setExperienceIndex(0);
+      setStage('let_go');
+      contentOpacity.value = withTiming(1, { duration: 600 });
+    }
   }, []);
+
+  useEffect(() => {
+    if (experienceData && experienceData.question && Array.isArray(experienceData.releaseOptions) && experienceData.releaseOptions.length > 0) {
+      setExperience(experienceData as MicroExperience);
+      setExperienceIndex(0);
+      setStage('let_go');
+      contentOpacity.value = withTiming(1, { duration: 600 });
+    } else {
+      loadExperience();
+    }
+  }, [experienceData, loadExperience]);
 
   const saveCompletion = async (id: string) => {
     try {
@@ -278,16 +294,11 @@ function LetItGoCardComponent() {
   };
 
   const resetCard = () => {
-    // If they want to try again, just reset visually for now.
-    // They will get a new one tomorrow when the app reloads.
     setStage('loading');
     setFirstChoice(null);
     setSecondChoice(null);
     setInteractionStatus('idle');
-    
-    // In a real app this might trigger a context reload, but for local state:
-    setStage('let_go');
-    contentOpacity.value = withTiming(1, { duration: 600 });
+    loadExperience();
   };
 
   const contentAnimStyle = useAnimatedStyle(() => ({ opacity: contentOpacity.value }));

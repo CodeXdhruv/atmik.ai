@@ -82,47 +82,76 @@ export default function HomeScreen() {
   const isGratitudeComplete = gratitudes.every(g => g.trim().length > 0);
 
   const [recommendedContent, setRecommendedContent] = useState<any[]>([]);
+  const [todaysForYouData, setTodaysForYouData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Load cached recommendations instantly on mount (0 ms latency)
   useEffect(() => {
-    async function loadData() {
+    async function loadCached() {
+      const cached = await apiService.getCachedLibraryContent();
+      if (cached && cached.length > 0) {
+        setRecommendedContent(cached);
+        setIsLoading(false);
+      }
+    }
+    loadCached();
+  }, []);
+
+  const loadHomeData = useCallback(async () => {
+    try {
       const data = await apiService.fetchLibraryContent();
       setRecommendedContent(data);
-        setIsLoading(false);
-
-      // Quotes logic
-      const today = new Date().toDateString();
-      if (lastQuoteRefreshDate !== today || currentDailyQuotes.length === 0) {
-        try {
-          const allQuotes = await apiService.fetchQuotesPool();
-          let unseen = allQuotes.filter((q: any) => !seenQuoteIds.includes(q.id));
-          
-          let selectedQuotes = [];
-          if (unseen.length >= 3) {
-            selectedQuotes = unseen.sort(() => 0.5 - Math.random()).slice(0, 3);
-            setSeenQuoteIds([...seenQuoteIds, ...selectedQuotes.map((q: any) => q.id)]);
-          } else if (allQuotes.length >= 3) {
-            // Loop back to beginning
-            selectedQuotes = allQuotes.sort(() => 0.5 - Math.random()).slice(0, 3);
-            setSeenQuoteIds(selectedQuotes.map((q: any) => q.id));
-          } else {
-            // Less than 3 quotes in DB
-            selectedQuotes = allQuotes;
-            setSeenQuoteIds(selectedQuotes.map((q: any) => q.id));
-          }
-
-          if (selectedQuotes.length > 0) {
-            setCurrentDailyQuotes(selectedQuotes);
-            setLastQuoteRefreshDate(today);
-          }
-        } catch (e) {
-          console.error("Failed to load quotes", e);
-        }
-      }
-
+    } catch (e) {
+      console.error("Failed to load library content", e);
+    } finally {
+      setIsLoading(false);
     }
-    loadData();
+
+    try {
+      const forYouItem = await apiService.fetchTodaysForYou();
+      if (forYouItem) {
+        setTodaysForYouData(forYouItem);
+      }
+    } catch (e) {
+      console.warn("Failed to load for-you item", e);
+    }
+
+    // Quotes logic
+    const today = new Date().toDateString();
+    if (lastQuoteRefreshDate !== today || currentDailyQuotes.length === 0) {
+      try {
+        const allQuotes = await apiService.fetchQuotesPool();
+        let unseen = allQuotes.filter((q: any) => !seenQuoteIds.includes(q.id));
+        
+        let selectedQuotes = [];
+        if (unseen.length >= 3) {
+          selectedQuotes = unseen.sort(() => 0.5 - Math.random()).slice(0, 3);
+          setSeenQuoteIds([...seenQuoteIds, ...selectedQuotes.map((q: any) => q.id)]);
+        } else if (allQuotes.length >= 3) {
+          // Loop back to beginning
+          selectedQuotes = allQuotes.sort(() => 0.5 - Math.random()).slice(0, 3);
+          setSeenQuoteIds(selectedQuotes.map((q: any) => q.id));
+        } else {
+          // Less than 3 quotes in DB
+          selectedQuotes = allQuotes;
+          setSeenQuoteIds(selectedQuotes.map((q: any) => q.id));
+        }
+
+        if (selectedQuotes.length > 0) {
+          setCurrentDailyQuotes(selectedQuotes);
+          setLastQuoteRefreshDate(today);
+        }
+      } catch (e) {
+        console.error("Failed to load quotes", e);
+      }
+    }
   }, [lastQuoteRefreshDate, currentDailyQuotes.length]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadHomeData();
+    }, [loadHomeData])
+  );
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -136,12 +165,6 @@ export default function HomeScreen() {
               <Text style={styles.greeting}>Welcome back, Dhruv!</Text>
               <Text style={styles.subGreeting}>How are you feeling today?</Text>
             </View>
-          </View>
-          <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.iconButton}>
-              <View style={styles.notificationDot} />
-              <Bell color={Colors.textPrimary} size={20} strokeWidth={1.5} />
-            </TouchableOpacity>
           </View>
         </View>
 
@@ -158,7 +181,7 @@ export default function HomeScreen() {
             </View>
           </View>
           
-          <LetItGoCard />
+          <LetItGoCard experienceData={todaysForYouData} />
         </View>
 
         {/* Recommended for You */}
@@ -192,7 +215,13 @@ export default function HomeScreen() {
             } else {
               router.push({
                 pathname: '/article',
-                params: { title: item.title, description: item.description, coverUrl: item.coverUrl, author: item.author, readTime: item.readTime },
+                params: { 
+                  title: item.title, 
+                  description: item.description, 
+                  coverUrl: item.coverUrl || (item as any).thumbnailUrl || (item as any).imageUrl || '', 
+                  author: item.author, 
+                  readTime: item.readTime 
+                },
               });
             }
           }}
