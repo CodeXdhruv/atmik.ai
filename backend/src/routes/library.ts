@@ -144,7 +144,7 @@ library.post('/content', async (c) => {
           sound: 'default',
           title: notifTitle,
           body: notifBody,
-          data: { type: 'CONTENT', id: notificationId, contentId: id },
+          data: { type: 'CONTENT', id: notificationId, contentId: id, route: '/health' },
         }));
 
         await fetch('https://exp.host/--/api/v2/push/send', {
@@ -162,6 +162,94 @@ library.post('/content', async (c) => {
     }
 
     return c.json({ success: true, message: 'Content added successfully', id }, 201);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// PUT /api/library/content/:id
+// Updates existing content metadata in D1 and triggers a push notification
+library.put('/content/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const { title, type, coverUrl, fileUrl, description, author, readTime, category } = await c.req.json();
+
+    if (!title) {
+      return c.json({ error: 'Title is required' }, 400);
+    }
+
+    await c.env.DB.prepare(
+      `UPDATE Content 
+       SET title = COALESCE(?, title),
+           type = COALESCE(?, type),
+           coverUrl = COALESCE(?, coverUrl),
+           fileUrl = COALESCE(?, fileUrl),
+           description = COALESCE(?, description),
+           author = COALESCE(?, author),
+           readTime = COALESCE(?, readTime),
+           category = COALESCE(?, category)
+       WHERE id = ?`
+    ).bind(
+      title || null,
+      type || null,
+      coverUrl || null,
+      fileUrl || null,
+      description || null,
+      author || null,
+      readTime || null,
+      category || null,
+      id
+    ).run();
+
+    // Trigger Push Notification automatically for Library Update
+    try {
+      const { results } = await c.env.DB.prepare('SELECT pushToken FROM User WHERE pushToken IS NOT NULL').all();
+      const tokens = results.map((r: any) => r.pushToken).filter(Boolean);
+
+      if (tokens.length > 0) {
+        const notifTitle = '📚 Library Content Updated!';
+        const notifBody = `"${title}" has been updated in the library. Tap to view!`;
+        const notificationId = crypto.randomUUID();
+
+        // Save to Notification inbox in D1
+        await c.env.DB.prepare(
+          'INSERT INTO Notification (id, userId, title, body, type, createdAt) VALUES (?, NULL, ?, ?, ?, ?)'
+        ).bind(notificationId, notifTitle, notifBody, 'CONTENT_UPDATE', new Date().toISOString()).run();
+
+        const messages = tokens.map(token => ({
+          to: token,
+          sound: 'default',
+          title: notifTitle,
+          body: notifBody,
+          data: { type: 'CONTENT_UPDATE', id: notificationId, contentId: id, route: '/health' },
+        }));
+
+        await fetch('https://exp.host/--/api/v2/push/send', {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Accept-encoding': 'gzip, deflate',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(messages),
+        });
+      }
+    } catch (e) {
+      console.error('Failed to send automatic update notification:', e);
+    }
+
+    return c.json({ success: true, message: 'Content updated successfully', id });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// DELETE /api/library/content/:id
+library.delete('/content/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    await c.env.DB.prepare('DELETE FROM Content WHERE id = ?').bind(id).run();
+    return c.json({ success: true, message: 'Content deleted successfully' });
   } catch (error: any) {
     return c.json({ error: error.message }, 500);
   }

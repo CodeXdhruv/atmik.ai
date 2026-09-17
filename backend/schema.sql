@@ -53,3 +53,12 @@ CREATE TABLE IF NOT EXISTS QuotesPool (
     author TEXT,
     createdAt TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS JourneyPool (
+    id TEXT PRIMARY KEY,
+    todaysReflection TEXT NOT NULL,
+    lookWithin TEXT NOT NULL,
+    thoughtToCarry TEXT NOT NULL,
+    isUsed INTEGER DEFAULT 0,
+    createdAt TEXT NOT NULL
+);

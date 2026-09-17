@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { Bindings } from '../types/env';
 import { retrieveContext } from '../lib/retrieval';
 import { getSystemPrompt } from '../lib/prompts';
+import { updateConversationContext } from '../lib/memory';
 import { streamSSE } from 'hono/streaming';
 
 const chat = new Hono<{ Bindings: Bindings }>();
@@ -15,8 +16,10 @@ chat.post('/', async (c) => {
     return c.json({ error: 'Missing text or userId' }, 400);
   }
 
+  const cleanUserId = (userId || 'default_user').trim();
+
   // STEP 1: Fetch Chat History Summary (D1)
-  const { results } = await c.env.DB.prepare('SELECT currentSummary FROM ChatSession WHERE userId = ?').bind(userId).all();
+  const { results } = await c.env.DB.prepare('SELECT currentSummary FROM ChatSession WHERE userId = ?').bind(cleanUserId).all();
   const currentSummary = (results[0] as any)?.currentSummary || "No previous context.";
 
   // STEP 2: RAG Retrieval (Vectorize + BGE-M3 + Reranker)
@@ -72,22 +75,9 @@ chat.post('/', async (c) => {
 
       await stream.writeSSE({ data: JSON.stringify({ type: 'done', final_text: visibleText }) });
 
-      c.executionCtx.waitUntil((async () => {
-        try {
-          const summaryResponse: any = await c.env.AI.run('@cf/meta/llama-3.1-8b-instruct-fp8', {
-            messages: [
-              { role: "system", content: "Summarize the ongoing conversation in two short sentences. Keep it factual." },
-              { role: "user", content: `Old Summary: ${currentSummary}\nUser said: ${text}\nAI replied: ${visibleText}\nNew Summary:` }
-            ]
-          });
-          const newSummary = summaryResponse.response;
-          await c.env.DB.prepare('INSERT INTO ChatSession (id, userId, currentSummary, updatedAt) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET currentSummary = excluded.currentSummary, updatedAt = excluded.updatedAt')
-            .bind(userId, userId, newSummary, new Date().toISOString())
-            .run();
-        } catch (err) {
-          console.error("Summary update failed:", err);
-        }
-      })());
+      c.executionCtx.waitUntil(
+        updateConversationContext(c.env, cleanUserId, currentSummary, text, visibleText, 'Chat')
+      );
       
     } catch (e: any) {
       console.error("Streaming error", e);

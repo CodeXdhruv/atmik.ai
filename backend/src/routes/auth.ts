@@ -44,13 +44,22 @@ auth.post('/push-token', async (c) => {
   try {
     const { firebaseUid, pushToken } = await c.req.json();
 
-    if (!firebaseUid || !pushToken) {
-      return c.json({ error: 'Missing firebaseUid or pushToken' }, 400);
+    if (!pushToken) {
+      return c.json({ error: 'Missing pushToken' }, 400);
     }
 
-    await c.env.DB.prepare('UPDATE User SET pushToken = ? WHERE firebaseUid = ?')
-      .bind(pushToken, firebaseUid)
-      .run();
+    const uid = firebaseUid || 'dev-user';
+
+    // Ensure user exists in User table
+    const { results } = await c.env.DB.prepare('SELECT id FROM User WHERE firebaseUid = ?').bind(uid).all();
+    if (results.length === 0) {
+      await c.env.DB.prepare('INSERT INTO User (id, firebaseUid, email, role, pushToken) VALUES (?, ?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), uid, `${uid}@app.com`, 'USER', pushToken).run();
+    } else {
+      await c.env.DB.prepare('UPDATE User SET pushToken = ? WHERE firebaseUid = ?')
+        .bind(pushToken, uid)
+        .run();
+    }
 
     return c.json({ success: true, message: 'Push token updated successfully' });
   } catch (error: any) {

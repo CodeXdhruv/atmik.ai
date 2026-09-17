@@ -214,4 +214,70 @@ admin.post('/quotes/upload', async (c) => {
   }
 });
 
+admin.post('/journey/upload', async (c) => {
+  try {
+    const items = await c.req.json();
+    if (!Array.isArray(items) || items.length === 0) {
+      return c.json({ error: 'Expected an array of journey items' }, 400);
+    }
+
+    // 1. Delete old journey JSON file(s) from R2 bucket and upload the new JSON file
+    try {
+      if (c.env.R2) {
+        const objectsList = await c.env.R2.list({ prefix: 'journey/' });
+        for (const obj of objectsList.objects) {
+          await c.env.R2.delete(obj.key);
+        }
+
+        const R2_KEY = 'journey/journey_pool.json';
+        await c.env.R2.put(R2_KEY, JSON.stringify(items, null, 2), {
+          httpMetadata: { contentType: 'application/json' },
+        });
+      }
+    } catch (r2Error) {
+      console.error('R2 Journey deletion/upload error:', r2Error);
+    }
+
+    // 2. Ensure table exists & clear old journey entries in D1 database
+    try {
+      await c.env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS JourneyPool (
+            id TEXT PRIMARY KEY,
+            todaysReflection TEXT NOT NULL,
+            lookWithin TEXT NOT NULL,
+            thoughtToCarry TEXT NOT NULL,
+            isUsed INTEGER DEFAULT 0,
+            createdAt TEXT NOT NULL
+        )
+      `).run();
+    } catch (e) {}
+
+    await c.env.DB.prepare('DELETE FROM JourneyPool').run();
+
+    // 3. Insert new journey items into D1 database
+    const stmt = c.env.DB.prepare(
+      'INSERT INTO JourneyPool (id, todaysReflection, lookWithin, thoughtToCarry, isUsed, createdAt) VALUES (?, ?, ?, ?, 0, ?)'
+    );
+
+    const batch = items.map((item: any, idx: number) => {
+      const id = item.id || `journey_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 7)}`;
+      const todaysReflection = JSON.stringify(item.todaysReflection || item.todayReflection || {});
+      const lookWithin = JSON.stringify(item.lookWithin || {});
+      const thoughtToCarry = JSON.stringify(item.thoughtToCarry || item.thoughtsToCarry || {});
+      const createdAt = new Date().toISOString();
+
+      return stmt.bind(id, todaysReflection, lookWithin, thoughtToCarry, createdAt);
+    });
+
+    const CHUNK_SIZE = 50;
+    for (let i = 0; i < batch.length; i += CHUNK_SIZE) {
+      await c.env.DB.batch(batch.slice(i, i + CHUNK_SIZE));
+    }
+
+    return c.json({ success: true, count: batch.length, message: `Old journey pool deleted. Successfully uploaded ${batch.length} new daily items to D1 and R2.` });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
 export default admin;

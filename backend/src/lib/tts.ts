@@ -14,16 +14,77 @@ export async function synthesize(env: Bindings, text: string, emotionTag: string
   try {
     const cleanLang = (lang || 'en').toLowerCase().trim();
     
-    // Route English to Cloudflare's edge-hosted Deepgram Aura model (<300ms latency, zero cost)
+    // Route English to Cloudflare's edge-hosted Deepgram Aura female models (<300ms latency)
     if (cleanLang === 'en' || cleanLang.startsWith('en')) {
-      console.log(`🎙️ [TTS] Using Deepgram Aura (@cf/deepgram/aura-1) for English: "${text}"`);
-      const response: any = await env.AI.run('@cf/deepgram/aura-1', { text });
+      const normEmotion = (emotionTag || '').toLowerCase().trim();
+      let femaleSpeaker = 'asteria'; // Default: smooth, warm female voice
+
+      if (normEmotion.includes('joy') || normEmotion.includes('encourag') || normEmotion.includes('enthusiast')) {
+        femaleSpeaker = 'stella'; // Bright, enthusiastic female voice
+      } else if (normEmotion.includes('calm') || normEmotion.includes('empath') || normEmotion.includes('sad')) {
+        femaleSpeaker = 'luna'; // Smooth, gentle, empathetic female voice
+      }
+
+      console.log(`🎙️ [TTS] Synthesizing English Female Voice (${femaleSpeaker}) for emotion [${normEmotion}]: "${text}"`);
+      
+      let response: any;
+      try {
+        response = await env.AI.run('@cf/deepgram/aura-1', { text, speaker: femaleSpeaker });
+      } catch (err) {
+        // Fallback to direct model name endpoint if speaker property varies
+        try {
+          response = await env.AI.run(`@cf/deepgram/aura-${femaleSpeaker}-en` as any, { text });
+        } catch (e) {
+          response = await env.AI.run('@cf/deepgram/aura-1', { text });
+        }
+      }
+
       if (response) {
         const audioBuffer = await new Response(response).arrayBuffer();
         return arrayBufferToBase64(audioBuffer);
       }
     } else {
-      // Route Hindi to hosted Piper TTS service on Render free tier
+      // Route Hindi to YourVoic Aura Lite API if API key is provided
+      if (env.YOURVOIC_API_KEY) {
+        console.log(`🎙️ [TTS] Using YourVoic Aura Lite for Hindi: "${text}"`);
+        const normEmotion = (emotionTag || '').toLowerCase().trim();
+        let hindiVoice = 'Deepika'; // Default smooth female voice
+
+        if (normEmotion.includes('joy') || normEmotion.includes('encourag')) {
+          hindiVoice = 'Tanvi';
+        } else if (normEmotion.includes('calm') || normEmotion.includes('empath')) {
+          hindiVoice = 'Kavita';
+        }
+
+        try {
+          const response = await fetch('https://yourvoic.com/api/v1/tts/generate', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-API-Key': env.YOURVOIC_API_KEY,
+              'Authorization': `Bearer ${env.YOURVOIC_API_KEY}`
+            },
+            body: JSON.stringify({
+              text: text,
+              model: 'aura-lite',
+              language: 'hi',
+              voice: hindiVoice,
+              speed: 1.0
+            })
+          });
+
+          if (response.ok) {
+            const audioBuffer = await response.arrayBuffer();
+            return arrayBufferToBase64(audioBuffer);
+          } else {
+            console.error("YourVoic API error response:", await response.text());
+          }
+        } catch (yvErr) {
+          console.error("YourVoic API exception:", yvErr);
+        }
+      }
+
+      // Fallback: Hosted Piper TTS service on Render free tier
       console.log(`🎙️ [TTS] Using Hosted Piper TTS for Hindi (${cleanLang}): "${text}"`);
       if (!env.TTS_ENDPOINT) {
         console.warn("TTS_ENDPOINT not configured");

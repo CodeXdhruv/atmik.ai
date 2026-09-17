@@ -8,6 +8,7 @@ export type Bindings = {
   OPENAI_API_KEY?: string;
   KOKORO_API_URL?: string; 
   TTS_ENDPOINT?: string;
+  YOURVOIC_API_KEY?: string;
   
   // R2 S3 API Variables
   CLOUDFLARE_ACCOUNT_ID?: string;

@@ -4,6 +4,7 @@ import { Bindings } from '../types/env';
 import { retrieveContext } from '../lib/retrieval';
 import { getSystemPrompt } from '../lib/prompts';
 import { synthesize } from '../lib/tts';
+import { updateConversationContext } from '../lib/memory';
 
 const voice = new Hono<{ Bindings: Bindings }>();
 
@@ -17,21 +18,48 @@ const MAX_AUDIO_BYTES = 2 * 1024 * 1024;
  */
 async function transcribeAudio(ai: any, audioBytes: Uint8Array): Promise<string> {
   console.log(`🎙️ [Backend] Transcribing audio chunk size: ${audioBytes.byteLength} bytes`);
+  
+  if (audioBytes.byteLength < 1000) {
+    console.warn(`🎙️ [Backend] Audio payload too short (${audioBytes.byteLength} bytes).`);
+    return "";
+  }
+
+  // Convert full Uint8Array to Array safely without stack overflow, preserving full audio container
+  const fullAudioArray = Array.from(audioBytes);
+
+  // Strategy 1: @cf/openai/whisper-large-v3-turbo
   try {
+    console.log(`🎙️ [Backend] Calling whisper-large-v3-turbo with full audio (${fullAudioArray.length} items)`);
     const response: any = await ai.run('@cf/openai/whisper-large-v3-turbo', {
-      audio: [...audioBytes]
+      audio: fullAudioArray
     });
+    console.log(`🎙️ [Backend] Raw Whisper AI response:`, JSON.stringify(response));
     const text = response?.text?.trim();
     if (text && text.length > 0) {
       console.log(`🎙️ [Backend] Whisper STT Transcribed: "${text}"`);
       return text;
     }
   } catch (err: any) {
-    console.warn(`🎙️ [Backend] Whisper STT notice (${err.message}), using fallback text prompt.`);
+    console.error(`🎙️ [Backend] Whisper v3 error:`, err?.message || err);
   }
 
-  // Fallback prompt if recording is silent or STT encounters temporary schema variance
-  return "Tell me about peace and wisdom in simple words.";
+  // Strategy 2: @cf/openai/whisper (v1 model)
+  try {
+    console.log(`🎙️ [Backend] Calling @cf/openai/whisper with full audio (${fullAudioArray.length} items)`);
+    const response: any = await ai.run('@cf/openai/whisper', {
+      audio: fullAudioArray
+    });
+    console.log(`🎙️ [Backend] Raw Whisper v1 response:`, JSON.stringify(response));
+    const text = response?.text?.trim();
+    if (text && text.length > 0) {
+      console.log(`🎙️ [Backend] Whisper STT Transcribed (v1): "${text}"`);
+      return text;
+    }
+  } catch (err: any) {
+    console.error(`🎙️ [Backend] Whisper v1 error:`, err?.message || err);
+  }
+
+  return "";
 }
 
 // GET /api/voice-chat
@@ -156,8 +184,9 @@ voice.get('/', upgradeWebSocket((c) => {
  * Extracted as a shared function for both binary and base64 audio paths.
  */
 async function processTranscription(c: any, ws: any, userId: string, lang: string, transcribedText: string) {
+  const cleanUserId = (userId || 'default_user').trim();
   // 2. Fetch Summary & Retrieve Context
-  const { results } = await c.env.DB.prepare('SELECT currentSummary FROM ChatSession WHERE userId = ?').bind(userId).all();
+  const { results } = await c.env.DB.prepare('SELECT currentSummary FROM ChatSession WHERE userId = ?').bind(cleanUserId).all();
   const currentSummary = (results[0] as any)?.currentSummary || "No previous context.";
   
   const context = await retrieveContext(c.env, transcribedText, lang);
@@ -196,12 +225,11 @@ async function processTranscription(c: any, ws: any, userId: string, lang: strin
             // Send live text to client
             ws.send(JSON.stringify({ type: 'text_stream', text: textChunk }));
 
-            // Check for chunk boundaries (more granular for lower latency, including Hindi Purna Viram '।')
+            // Check for natural sentence boundaries (.?!। or newline) or complete 12-word clause
             const wordCount = currentSentence.trim().split(/\s+/).length;
-            const isPunctuation = /[.?!,;:।]\s/.test(currentSentence) || /[.?!,;:।]$/.test(currentSentence) || /\n/.test(currentSentence);
-            const targetWords = chunkIndex === 0 ? 4 : 5;
+            const isSentenceEnd = /[.?!।]\s/.test(currentSentence) || /[.?!।]$/.test(currentSentence) || /\n/.test(currentSentence);
             
-            if (isPunctuation || wordCount >= targetWords) {
+            if (isSentenceEnd || wordCount >= 12) {
               let sentenceToSpeak = currentSentence.trim();
               currentSentence = ""; 
 
@@ -266,23 +294,8 @@ async function processTranscription(c: any, ws: any, userId: string, lang: strin
   console.log('🎙️ [Backend] Completed sending all TTS chunks');
   ws.send(JSON.stringify({ type: 'generation_done' }));
 
-  // 5. Background Summary Update
-  c.executionCtx.waitUntil((async () => {
-    try {
-      const summaryResponse: any = await c.env.AI.run('@cf/meta/llama-3.1-8b-instruct-fp8', {
-        messages: [
-          { role: "system", content: "Summarize the ongoing conversation in two short sentences." },
-          { role: "user", content: `Old Summary: ${currentSummary}\nUser said: ${transcribedText}\nAI replied: ${fullResponse}\nNew Summary:` }
-        ]
-      });
-      const newSummary = summaryResponse.response;
-      await c.env.DB.prepare('INSERT INTO ChatSession (id, userId, currentSummary, updatedAt) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET currentSummary = excluded.currentSummary, updatedAt = excluded.updatedAt')
-        .bind(userId, userId, newSummary, new Date().toISOString())
-        .run();
-    } catch (err) {
-      console.error("Summary update failed:", err);
-    }
-  })());
+  // 5. Update Conversation Context (Smart Memory)
+  await updateConversationContext(c.env, cleanUserId, currentSummary, transcribedText, fullResponse, 'Voice');
 }
 
 export default voice;
