@@ -233,5 +233,22 @@ export const apiService = {
       throw new Error(err.error || `Failed to upload journey JSON`);
     }
     return response.json();
+  },
+
+  /**
+   * Upload For You Micro-Experiences JSON Pool to Cloudflare D1 / R2
+   */
+  async uploadForYouJSON(forYouData: any[]): Promise<{ success: boolean; count: number; message: string }> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/for-you/upload`, {
+      method: 'POST',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify(forYouData),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || err.message || `Failed to upload for-you JSON (${response.status})`);
+    }
+    return response.json();
   }
 };

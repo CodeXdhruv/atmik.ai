@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { 
   BookOpen, 
   Sparkles,
+  Heart,
   Plus, 
   LayoutGrid, 
   Tag, 
@@ -41,6 +42,7 @@ export default function Sidebar() {
         { name: "Library", href: "/dashboard/content", icon: BookOpen },
         { name: "Quotes", href: "/dashboard/quotes", icon: MessageSquare },
         { name: "Inner Journey", href: "/dashboard/journey", icon: Sparkles },
+        { name: "For You", href: "/dashboard/for-you", icon: Heart },
         { name: "Create", href: "/dashboard/content/new", icon: Plus },
         { name: "Categories", href: "/dashboard/categories", icon: LayoutGrid },
         { name: "Media", href: "/dashboard/media", icon: ImageIcon }
