@@ -9,7 +9,6 @@ export class LocalNotificationService {
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#D9A05B',
-        sound: 'default',
       });
     }
     const { status } = await Notifications.requestPermissionsAsync();

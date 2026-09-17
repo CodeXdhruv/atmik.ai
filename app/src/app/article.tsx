@@ -11,16 +11,21 @@ const { width } = Dimensions.get('window');
 
 export default function ArticleScreen() {
   const router = useRouter();
-  const { title, description, coverUrl, author, readTime } = useLocalSearchParams();
+  const params = useLocalSearchParams();
+  const { title, description, author, readTime } = params;
+
+  // Extract cover/thumbnail URL from all possible param fields sent by caller
+  const rawCover = (params.coverUrl || params.thumbnailUrl || params.imageUrl || params.thumbnail || params.cover) as string | undefined;
+
+  const hasValidCover = typeof rawCover === 'string' && rawCover.trim().length > 0 && rawCover !== 'null' && rawCover !== 'undefined';
+  const validCoverUrl = hasValidCover
+    ? rawCover!.trim()
+    : 'https://images.unsplash.com/photo-1518655048521-f130df041f66?q=80&w=2000';
 
   // Dismiss any active keyboard when opening article
   useEffect(() => {
     Keyboard.dismiss();
   }, []);
-
-  const validCoverUrl = (typeof coverUrl === 'string' && coverUrl.trim().length > 0 && coverUrl !== 'null' && coverUrl !== 'undefined')
-    ? coverUrl.trim()
-    : 'https://images.unsplash.com/photo-1518655048521-f130df041f66?q=80&w=2000';
 
   const htmlContent = typeof description === 'string' && description.trim() !== '' 
     ? description 
@@ -59,6 +64,11 @@ export default function ArticleScreen() {
       marginLeft: 0,
       fontStyle: 'italic',
       color: '#718096',
+    },
+    img: {
+      borderRadius: 12,
+      marginVertical: 16,
+      maxWidth: '100%',
     }
   };
 
@@ -104,6 +114,17 @@ export default function ArticleScreen() {
 
         {/* Article Body */}
         <View style={styles.articleBody}>
+          {hasValidCover && (
+            <View style={styles.bodyImageContainer}>
+              <Image
+                source={{ uri: validCoverUrl }}
+                style={styles.bodyImage}
+                contentFit="cover"
+                transition={300}
+              />
+            </View>
+          )}
+
           <RenderHTML
             contentWidth={width - 48} // 24px padding on each side
             source={{ html: htmlContent }}
@@ -185,5 +206,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 32,
     paddingBottom: 80,
-  }
+  },
+  bodyImageContainer: {
+    width: '100%',
+    height: 220,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 24,
+    backgroundColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  bodyImage: {
+    width: '100%',
+    height: '100%',
+  },
 });

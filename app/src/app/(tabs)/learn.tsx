@@ -72,8 +72,33 @@ export default function LearnScreen() {
   const featuredScrollRef = React.useRef<ScrollView>(null);
   const [activeFeaturedIndex, setActiveFeaturedIndex] = useState(0);
 
+  // Load cached items instantly on component mount (0 ms latency)
   React.useEffect(() => {
-    async function loadData() {
+    async function loadCachedData() {
+      const [cachedContent, cachedCategories] = await Promise.all([
+        apiService.getCachedLibraryContent(),
+        apiService.getCachedCategories()
+      ]);
+
+      if (cachedContent && cachedContent.length > 0) {
+        setLibraryContent(cachedContent);
+        setIsLoading(false);
+      }
+
+      if (cachedCategories && cachedCategories.length > 0) {
+        const dynamicThemes = cachedCategories.map((cat: any) => ({
+          id: cat.id || cat.name.toLowerCase(),
+          label: cat.name,
+          icon: getCategoryIcon(cat.icon, cat.name)
+        }));
+        setThemes(dynamicThemes);
+      }
+    }
+    loadCachedData();
+  }, []);
+
+  const loadData = useCallback(async () => {
+    try {
       const [contentData, categoryData] = await Promise.all([
         apiService.fetchLibraryContent(),
         apiService.fetchCategories()
@@ -89,10 +114,18 @@ export default function LearnScreen() {
       }));
 
       setThemes(dynamicThemes);
+    } catch (err) {
+      console.error('Error fetching library data:', err);
+    } finally {
       setIsLoading(false);
     }
-    loadData();
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   const filteredContent = libraryContent.filter((item) => {
     if (activeCategory === 'all') return true;
@@ -103,6 +136,13 @@ export default function LearnScreen() {
 
   const featuredItems = activeCategory === 'all' ? filteredContent.slice(0, Math.min(3, filteredContent.length)) : [];
   const curatedItems = activeCategory === 'all' ? filteredContent.slice(featuredItems.length) : filteredContent;
+
+  const activeThemeItems = libraryContent.filter((item) => {
+    const matchesTheme = item.category === activeTheme;
+    if (!matchesTheme) return false;
+    if (activeCategory === 'all') return true;
+    return item.type?.toLowerCase() === activeCategory.toLowerCase();
+  });
 
   React.useEffect(() => {
     if (featuredItems.length <= 1) return;
@@ -120,17 +160,10 @@ export default function LearnScreen() {
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
-        {/* Header without Background Image */}
+        {/* Header matching Your Inner Journey page */}
         <View style={styles.headerBackground}>
-          <View style={styles.headerTop}>
-            <View>
-              <Text style={styles.headerTitle}>Library</Text>
-              <Text style={styles.headerSubtitle}>Knowledge for a calmer, wiser you.</Text>
-            </View>
-            <TouchableOpacity style={styles.searchButton}>
-              <Search color="#0A2540" size={20} strokeWidth={2} />
-            </TouchableOpacity>
-          </View>
+          <Text style={styles.headerTitle}>Library</Text>
+          <Text style={styles.headerSubtitle}>Knowledge for a calmer, wiser you.</Text>
         </View>
 
         {/* Categories Horizontal Scroll */}
@@ -203,7 +236,7 @@ export default function LearnScreen() {
                             params: { 
                               title: item.title, 
                               description: item.description, 
-                              coverUrl: item.coverUrl, 
+                              coverUrl: item.coverUrl || (item as any).thumbnailUrl || (item as any).imageUrl || '', 
                               author: item.author, 
                               readTime: item.readTime 
                             } 
@@ -222,9 +255,6 @@ export default function LearnScreen() {
                       <View style={styles.featuredOverlay}>
                         <View style={styles.featuredTopRow}>
                           <Text style={styles.featuredTag}>FEATURED</Text>
-                          <TouchableOpacity style={styles.bookmarkButton}>
-                            <Bookmark color="#0A2540" size={20} strokeWidth={1.5} />
-                          </TouchableOpacity>
                         </View>
                         
                         <View style={styles.featuredMainContent}>
@@ -277,7 +307,9 @@ export default function LearnScreen() {
         {!isLoading && curatedItems.length > 0 && (
           <>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Curated for You</Text>
+              <Text style={styles.sectionTitle}>
+                {activeCategory === 'all' ? 'Curated for You' : activeCategory === 'book' ? 'Books' : 'Articles'}
+              </Text>
               <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <Text style={styles.viewAllText}>See all</Text>
                 <ArrowRight color="#DEAB5B" size={14} style={{ marginLeft: 2 }} />
@@ -309,7 +341,7 @@ export default function LearnScreen() {
                             params: {
                               title: item.title,
                               description: item.description,
-                              coverUrl: item.coverUrl,
+                              coverUrl: item.coverUrl || (item as any).thumbnailUrl || (item as any).imageUrl || '',
                               author: item.author,
                               readTime: item.readTime
                             }
@@ -328,7 +360,6 @@ export default function LearnScreen() {
                       <View style={styles.curatedImage}>
                         <View style={styles.curatedCardTop}>
                           <Text style={styles.curatedTag}>{item.type?.toUpperCase() || 'CONTENT'}</Text>
-                          <Bookmark color="#0A2540" size={16} strokeWidth={2} />
                         </View>
                         {(!item.coverUrl && item.type !== 'QUOTE') && (
                           <View style={styles.curatedImageTextContainer}>
@@ -393,13 +424,13 @@ export default function LearnScreen() {
               </TouchableOpacity>
             </View>
             
-            {libraryContent.filter(item => item.category === activeTheme).length > 0 ? (
+            {activeThemeItems.length > 0 ? (
               <ScrollView 
                 horizontal 
                 showsHorizontalScrollIndicator={false} 
                 contentContainerStyle={styles.curatedScroll}
               >
-                {libraryContent.filter(item => item.category === activeTheme).map(item => (
+                {activeThemeItems.map(item => (
                   <TouchableOpacity 
                     key={`theme-${item.id || Math.random().toString()}`}
                     style={styles.curatedCard}
@@ -415,7 +446,7 @@ export default function LearnScreen() {
                             params: { 
                               title: item.title, 
                               description: item.description, 
-                              coverUrl: item.coverUrl, 
+                              coverUrl: item.coverUrl || (item as any).thumbnailUrl || (item as any).imageUrl || '', 
                               author: item.author, 
                               readTime: item.readTime 
                             } 
@@ -430,7 +461,6 @@ export default function LearnScreen() {
                        <View style={[styles.curatedImageContainer, { backgroundColor: '#F8FAFC', borderRadius: 12, padding: 16 }]}>
                          <View style={styles.curatedCardTop}>
                            <Text style={styles.curatedTag}>QUOTE</Text>
-                           <Bookmark color="#0A2540" size={18} strokeWidth={1.5} />
                          </View>
                          <View style={styles.quoteCardContent}>
                            <QuoteIcon color="#DEAB5B" size={24} fill="#DEAB5B" style={{ alignSelf: 'center', marginBottom: 12 }} />
@@ -447,7 +477,6 @@ export default function LearnScreen() {
                         >
                           <View style={styles.curatedCardTop}>
                             <Text style={styles.curatedTag}>{item.type || 'CONTENT'}</Text>
-                            <Bookmark color="#0A2540" size={18} strokeWidth={1.5} />
                           </View>
                           {item.type === 'BOOK' && (
                             <View style={styles.curatedImageTextContainer}>
@@ -466,7 +495,9 @@ export default function LearnScreen() {
               </ScrollView>
             ) : (
               <View style={styles.emptyThemeContainer}>
-                <Text style={styles.emptyThemeText}>No content available for {activeTheme} yet.</Text>
+                <Text style={styles.emptyThemeText}>
+                  No {activeCategory !== 'all' ? (activeCategory === 'book' ? 'books' : 'articles') : 'content'} available for {activeTheme} yet.
+                </Text>
               </View>
             )}
           </Animated.View>
@@ -490,34 +521,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.xl,
     paddingBottom: Spacing.md,
-    backgroundColor: '#FAF7F2',
-  },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: Spacing.md,
-  },
-  searchButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#fff',
-    justifyContent: 'center',
+    backgroundColor: '#FCFAF8',
     alignItems: 'center',
-    ...Shadows.light,
   },
   headerTitle: {
-    fontSize: 40,
+    fontSize: 24,
     fontFamily: 'serif',
-    fontWeight: '700',
-    color: '#0A2540',
-    marginBottom: 4,
+    fontWeight: '500',
+    color: '#1B2D4F',
+    textAlign: 'center',
+    marginBottom: 6,
   },
   headerSubtitle: {
-    fontSize: 15,
-    color: '#718096',
-    lineHeight: 22,
+    fontSize: 14,
+    color: '#8A7E6E',
+    textAlign: 'center',
   },
   quoteContainer: {
     marginTop: 10,

@@ -314,9 +314,9 @@ function PrivacyPolicyView({ router }: { router: any }) {
 
         <Text style={styles.policySectionTitle}>1. Information We Collect</Text>
         <Text style={styles.paragraph}>
-          <Text style={styles.bold}>Account Information:</Text> When you sign in using Google or Email, we collect your email address, name, and profile picture provided by the authentication service (Firebase Auth).{'\n\n'}
-          <Text style={styles.bold}>Chat History:</Text> When you interact with our AI, the content of your conversations is transmitted to our servers and stored in our database (Cloudflare D1) to maintain conversation context.{'\n\n'}
-          <Text style={styles.bold}>Device & App Data:</Text> We collect notification push tokens via Expo to send you reminders. Usage data and wellness habits are stored locally on your device.
+          <Text style={styles.bold}>Account Information:</Text> When you sign in using Google or Email, we collect your email address, name, and profile picture provided by your authentication service.{'\n\n'}
+          <Text style={styles.bold}>Chat History:</Text> When you interact with our AI, the content of your conversations is transmitted to our servers and stored securely in our database to maintain conversation context.{'\n\n'}
+          <Text style={styles.bold}>Device & App Data:</Text> We collect notification push tokens to send you reminders. Usage data and wellness habits are stored locally on your device.
         </Text>
 
         <Text style={styles.policySectionTitle}>2. How We Use Your Information</Text>
@@ -329,8 +329,8 @@ function PrivacyPolicyView({ router }: { router: any }) {
 
         <Text style={styles.policySectionTitle}>3. Information Sharing</Text>
         <Text style={styles.paragraph}>
-          <Text style={styles.bold}>AI Processors:</Text> Your chat prompts are transmitted to our AI API partners (e.g., OpenAI or Anthropic) solely for the purpose of generating responses. These partners are strictly prohibited from using your data to train their public models.{'\n\n'}
-          <Text style={styles.bold}>Infrastructure:</Text> Data is stored securely on Cloudflare D1 and Firebase.{'\n\n'}
+          <Text style={styles.bold}>AI Processors:</Text> Your chat prompts are transmitted to our AI processing partners solely for the purpose of generating responses. These partners are strictly prohibited from using your data to train their public models.{'\n\n'}
+          <Text style={styles.bold}>Infrastructure:</Text> All data is stored securely using encrypted cloud infrastructure and database services.{'\n\n'}
           We do not sell your personal information to third parties.
         </Text>
 
