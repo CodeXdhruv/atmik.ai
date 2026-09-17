@@ -17,28 +17,34 @@ import {
 import { apiService } from '@/services/api';
 
 export default function JourneyScreen() {
-  const [todaysReflectionData, setTodaysReflectionData] = useState<any>(null);
-  const [lookWithinData, setLookWithinData] = useState<any>(null);
-  const [thoughtData, setThoughtData] = useState<any>(null);
+  const [todaysReflectionData, setTodaysReflectionData] = useState<any>(innerJourneyData.todaysReflection[0]);
+  const [lookWithinData, setLookWithinData] = useState<any>(innerJourneyData.lookWithin[0]);
+  const [thoughtData, setThoughtData] = useState<any>(innerJourneyData.thoughtsToCarry[0]);
 
-  // Load daily content from backend API (or fallback to local asset)
+  // Load cached journey instantly on mount (0 ms latency)
+  React.useEffect(() => {
+    async function loadCached() {
+      const cached = await apiService.getCachedTodaysJourney();
+      if (cached) {
+        setTodaysReflectionData({ ...cached.todaysReflection, id: cached.id });
+        setLookWithinData({ ...cached.lookWithin, id: cached.id });
+        setThoughtData({ ...cached.thoughtToCarry, id: cached.id });
+      }
+    }
+    loadCached();
+  }, []);
+
+  // Load daily content from backend API (revalidating in background)
   useFocusEffect(
     useCallback(() => {
       let isMounted = true;
       async function loadJourney() {
         const dynamicJourney = await apiService.fetchTodaysJourney();
 
-        if (isMounted) {
-          if (dynamicJourney) {
-            setTodaysReflectionData({ ...dynamicJourney.todaysReflection, id: dynamicJourney.id });
-            setLookWithinData({ ...dynamicJourney.lookWithin, id: dynamicJourney.id });
-            setThoughtData({ ...dynamicJourney.thoughtToCarry, id: dynamicJourney.id });
-          } else {
-            // Fallback to local default bundle
-            setTodaysReflectionData(innerJourneyData.todaysReflection[0]);
-            setLookWithinData(innerJourneyData.lookWithin[0]);
-            setThoughtData(innerJourneyData.thoughtsToCarry[0]);
-          }
+        if (isMounted && dynamicJourney) {
+          setTodaysReflectionData({ ...dynamicJourney.todaysReflection, id: dynamicJourney.id });
+          setLookWithinData({ ...dynamicJourney.lookWithin, id: dynamicJourney.id });
+          setThoughtData({ ...dynamicJourney.thoughtToCarry, id: dynamicJourney.id });
         }
       }
 
@@ -61,11 +67,9 @@ export default function JourneyScreen() {
         </View>
 
         {/* ── Today's Reflection (Hero) ─────────────────── */}
-        {todaysReflectionData && (
-          <View style={styles.heroSection}>
-            <TodaysReflectionCard data={todaysReflectionData} />
-          </View>
-        )}
+        <View style={styles.heroSection}>
+          <TodaysReflectionCard data={todaysReflectionData} />
+        </View>
 
         {/* ── A Little Deeper ────────────────────────────── */}
         <View style={styles.sectionHeader}>
@@ -73,8 +77,8 @@ export default function JourneyScreen() {
           <Text style={styles.sectionSubtitle}>Take a moment. Explore what feels meaningful.</Text>
         </View>
 
-        {lookWithinData && <LookWithinCard data={lookWithinData} />}
-        {thoughtData && <ThoughtToCarryCard data={thoughtData} />}
+        <LookWithinCard data={lookWithinData} />
+        <ThoughtToCarryCard data={thoughtData} />
         <TalkToAtmikCard />
 
         {/* ── Your Reflections Preview ──────────────────── */}
