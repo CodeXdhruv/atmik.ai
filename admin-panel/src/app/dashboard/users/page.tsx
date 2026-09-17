@@ -93,12 +93,18 @@ export default function UsersPage() {
                     <tr key={user.id} className="hover:bg-primary-navy/[0.005]">
                       {/* Profile Column */}
                       <td className="py-4 px-6 flex items-center gap-3">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={user.avatar}
-                          alt={user.name}
-                          className="w-9 h-9 rounded-full object-cover border border-border-custom flex-shrink-0"
-                        />
+                        {user.avatar ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={user.avatar}
+                            alt={user.name}
+                            className="w-9 h-9 rounded-full object-cover border border-border-custom flex-shrink-0"
+                          />
+                        ) : (
+                          <div className="w-9 h-9 rounded-full bg-primary-navy text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
+                            {user.name?.charAt(0).toUpperCase() || 'U'}
+                          </div>
+                        )}
                         <div className="min-w-0">
                           <p className="font-semibold text-primary-navy truncate">{user.name}</p>
                           <p className="text-[10px] text-primary-navy/40 mt-0.5 truncate">{user.email}</p>

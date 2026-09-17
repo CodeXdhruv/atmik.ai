@@ -385,7 +385,7 @@ export const initialComments: Comment[] = [
     id: "c1",
     content: "This chapter on soul frequencies really resonates with me. It explains so much about human connections.",
     authorName: "Amit Verma",
-    authorAvatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=80&h=80&q=80",
+    authorAvatar: "",
     contentTitle: "The Science of Soul",
     contentType: "Book",
     status: "Pending",
@@ -395,7 +395,7 @@ export const initialComments: Comment[] = [
     id: "c2",
     content: "The audio guided track has really helped me calm down my evening anxiety. Thank you, Team!",
     authorName: "Sneha Reddy",
-    authorAvatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=80&h=80&q=80",
+    authorAvatar: "",
     contentTitle: "Inner Peace - Audio",
     contentType: "Audio",
     status: "Approved",
@@ -405,7 +405,7 @@ export const initialComments: Comment[] = [
     id: "c3",
     content: "Is there a translated Hindi edition available for the 'Atmik Intelligence' book?",
     authorName: "Rajesh Kumar",
-    authorAvatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=80&h=80&q=80",
+    authorAvatar: "",
     contentTitle: "Atmik Intelligence",
     contentType: "Book",
     status: "Approved",
@@ -417,7 +417,7 @@ export const initialActivityLogs: ActivityLog[] = [
   {
     id: "l1",
     adminName: "Arjun Dev",
-    adminAvatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=80&h=80&q=80",
+    adminAvatar: "",
     action: "Publish",
     details: "New book 'The Science of Soul' published",
     timestamp: "2 mins ago"
@@ -425,7 +425,7 @@ export const initialActivityLogs: ActivityLog[] = [
   {
     id: "l2",
     adminName: "Arjun Dev",
-    adminAvatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=80&h=80&q=80",
+    adminAvatar: "",
     action: "Update",
     details: "Article 'Understanding Karma' updated",
     timestamp: "3 hours ago"
@@ -433,7 +433,7 @@ export const initialActivityLogs: ActivityLog[] = [
   {
     id: "l3",
     adminName: "Rohan Sharma",
-    adminAvatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=80&h=80&q=80",
+    adminAvatar: "",
     action: "Upload",
     details: "Audio 'Peace Within' uploaded",
     timestamp: "2 days ago"
@@ -441,7 +441,7 @@ export const initialActivityLogs: ActivityLog[] = [
   {
     id: "l4",
     adminName: "System",
-    adminAvatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=80&h=80&q=80",
+    adminAvatar: "",
     action: "Auth",
     details: "User Priya Patel registered",
     timestamp: "2 days ago"

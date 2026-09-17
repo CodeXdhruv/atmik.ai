@@ -6,6 +6,7 @@ import { useAdminStore } from "@/store/adminStore";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   BookOpen, 
+  Sparkles,
   Plus, 
   LayoutGrid, 
   Tag, 
@@ -39,6 +40,7 @@ export default function Sidebar() {
       items: [
         { name: "Library", href: "/dashboard/content", icon: BookOpen },
         { name: "Quotes", href: "/dashboard/quotes", icon: MessageSquare },
+        { name: "Inner Journey", href: "/dashboard/journey", icon: Sparkles },
         { name: "Create", href: "/dashboard/content/new", icon: Plus },
         { name: "Categories", href: "/dashboard/categories", icon: LayoutGrid },
         { name: "Media", href: "/dashboard/media", icon: ImageIcon }

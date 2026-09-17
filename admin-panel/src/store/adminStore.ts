@@ -95,7 +95,7 @@ export const useAdminStore = create<AdminState>((set, get) => ({
       email: user.email || '',
       role: user.role || 'ADMIN',
       token: user.token,
-      avatar: user.avatar || `https://images.unsplash.com/photo-${Math.random() > 0.5 ? '1534528741775-53994a69daeb' : '1507003211169-0a1dd7228f2d'}?auto=format&fit=crop&w=150&h=150&q=80`,
+      avatar: user.avatar || '',
     } as User;
     set({ isAuthenticated: true, currentAdmin: admin });
     
@@ -172,7 +172,7 @@ export const useAdminStore = create<AdminState>((set, get) => ({
     const newLog: ActivityLog = {
       id: Math.random().toString(),
       adminName: get().currentAdmin?.name || 'System',
-      adminAvatar: get().currentAdmin?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=80&h=80&q=80',
+      adminAvatar: get().currentAdmin?.avatar || '',
       action: (['Publish', 'Delete', 'Upload', 'Update', 'Auth'].includes(actionName) ? actionName : 'Update') as ActivityLog['action'],
       details,
       timestamp: 'Just now'

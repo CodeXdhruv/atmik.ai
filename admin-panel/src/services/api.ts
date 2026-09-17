@@ -1,16 +1,25 @@
 import { auth } from "@/lib/firebase";
+import { useAdminStore } from "@/store/adminStore";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://atmik-ai-backend.swatantra-backend.workers.dev';
 
-// A helper to get the Firebase auth token
+// A helper to get the Firebase auth token safely
 const getAuthHeaders = async () => {
-  if (!auth.currentUser) {
-    throw new Error('User is not authenticated via Firebase');
+  let token = "";
+  try {
+    if (auth.currentUser) {
+      token = await auth.currentUser.getIdToken();
+    }
+  } catch (e) {
+    console.warn("Failed to retrieve token from auth.currentUser", e);
   }
-  
-  const token = await auth.currentUser.getIdToken();
+
+  if (!token) {
+    token = useAdminStore.getState().currentAdmin?.token || "";
+  }
+
   return {
-    'Authorization': `Bearer ${token}`,
+    'Authorization': token ? `Bearer ${token}` : '',
     'Content-Type': 'application/json',
   };
 };
@@ -28,6 +37,35 @@ export const apiService = {
 
     if (!response.ok) {
       throw new Error(`Failed to save content metadata: ${response.statusText}`);
+    }
+  },
+
+  /**
+   * Update content metadata in Cloudflare D1 Database
+   */
+  async updateContentMetadata(id: string, data: { title: string; type?: string; coverUrl?: string; fileUrl?: string; description?: string; author?: string; readTime?: number; category?: string }): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/api/library/content/${id}`, {
+      method: 'PUT',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to update content metadata: ${response.statusText}`);
+    }
+  },
+
+  /**
+   * Delete content from Cloudflare D1 Database
+   */
+  async deleteContent(id: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/api/library/content/${id}`, {
+      method: 'DELETE',
+      headers: await getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to delete content: ${response.statusText}`);
     }
   },
 
@@ -178,5 +216,22 @@ export const apiService = {
       headers: await getAuthHeaders(),
     });
     if (!response.ok) throw new Error(`Failed to delete category`);
+  },
+
+  /**
+   * Upload Inner Journey JSON Pool to Cloudflare D1 / R2
+   */
+  async uploadJourneyJSON(journeyData: any[]): Promise<{ success: boolean; count: number; message: string }> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/journey/upload`, {
+      method: 'POST',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify(journeyData),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to upload journey JSON`);
+    }
+    return response.json();
   }
 };

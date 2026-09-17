@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Dr. Atmik AI — Admin Panel",
-  description: "A premium, editorial Content Management System for Dr. Atmik AI.",
+  title: "atmik.ai",
+  description: "A premium, editorial Content Management System for atmik.ai.",
 };
 
 export default function RootLayout({

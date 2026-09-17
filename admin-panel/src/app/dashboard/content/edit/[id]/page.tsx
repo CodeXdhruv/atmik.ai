@@ -22,7 +22,9 @@ import R2Uploader from "@/components/ui/R2Uploader";
 import Link from "next/link";
 import toast, { Toaster } from "react-hot-toast";
 
-type ContentType = 'Book' | 'Article' | 'Audio' | 'Video' | 'Meditation' | 'Quote';
+import { apiService } from "@/services/api";
+
+type ContentType = 'Book' | 'Article' | 'Audio' | 'Video' | 'Meditation';
 
 export default function EditContentPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -94,36 +96,50 @@ export default function EditContentPage({ params }: { params: Promise<{ id: stri
     { name: "Article" as ContentType, icon: FileText },
     { name: "Audio" as ContentType, icon: Headphones },
     { name: "Video" as ContentType, icon: Video },
-    { name: "Meditation" as ContentType, icon: Sparkles },
-    { name: "Quote" as ContentType, icon: QuoteIcon }
+    { name: "Meditation" as ContentType, icon: Sparkles }
   ];
 
-  const handleUpdate = () => {
+  const handleUpdate = async () => {
     if (!title.trim() || !author.trim()) {
       toast.error("Please fill in the required fields (Title, Author).");
       return;
     }
 
-    updateContentItem(id, {
-      title,
-      subtitle,
-      type,
-      author,
-      status,
-      language,
-      category,
-      tags: selectedTags,
-      featured,
-      quoteText: type === "Quote" || type === "Book" ? quoteText : undefined,
-      description,
-      thumbnail: thumbnail?.url || "",
-      fileUrl: pdfFile?.url,
-      fileName: pdfFile?.name,
-      fileSize: pdfFile?.size
-    });
+    try {
+      await apiService.updateContentMetadata(id, {
+        title,
+        type: type.toUpperCase(),
+        coverUrl: thumbnail?.url,
+        fileUrl: pdfFile?.url || "text-only",
+        description,
+        author,
+        readTime: 5,
+        category
+      });
 
-    toast.success("Content updated successfully!");
-    router.push("/dashboard/content");
+      updateContentItem(id, {
+        title,
+        subtitle,
+        type,
+        author,
+        status,
+        language,
+        category,
+        tags: selectedTags,
+        featured,
+        description,
+        thumbnail: thumbnail?.url || "",
+        fileUrl: pdfFile?.url,
+        fileName: pdfFile?.name,
+        fileSize: pdfFile?.size
+      });
+
+      toast.success("Content updated successfully & push notification sent!");
+      router.push("/dashboard/content");
+    } catch (error: any) {
+      console.error("Failed to update content:", error);
+      toast.error(error.message || "Failed to update content in database.");
+    }
   };
 
   const handleTagToggle = (tagName: string) => {
@@ -305,8 +321,8 @@ export default function EditContentPage({ params }: { params: Promise<{ id: stri
               </div>
             </div>
 
-            {/* Quote box - only visible if Quote or Book type */}
-            {(type === "Quote" || type === "Book") && (
+            {/* Quote box - only visible if Book type */}
+            {type === "Book" && (
               <div className="space-y-1.5 pt-2">
                 <label className="text-[10px] font-semibold text-primary-navy/60 uppercase tracking-wider">
                   Featured Quote Preview Text
@@ -447,16 +463,14 @@ export default function EditContentPage({ params }: { params: Promise<{ id: stri
             />
 
             {/* Resource file */}
-            {type !== "Quote" && (
-              <R2Uploader
-                label={type === "Book" ? "Book/PDF File *" : type === "Audio" ? "Audio Resource File *" : "Video File *"}
-                acceptType={type === "Book" ? "pdf" : type === "Audio" ? "audio" : "video"}
-                value={pdfFile}
-                onUploadSuccess={setPdfFile}
-                onRemove={() => setPdfFile(undefined)}
-                maxSizeMB={type === "Book" ? 5 : 50}
-              />
-            )}
+            <R2Uploader
+              label={type === "Book" ? "Book/PDF File *" : type === "Audio" ? "Audio Resource File *" : "Video File *"}
+              acceptType={type === "Book" ? "pdf" : type === "Audio" ? "audio" : "video"}
+              value={pdfFile}
+              onUploadSuccess={setPdfFile}
+              onRemove={() => setPdfFile(undefined)}
+              maxSizeMB={type === "Book" ? 5 : 50}
+            />
           </div>
 
           {/* Card C: Notion-Style Live App Preview */}
@@ -500,8 +514,8 @@ export default function EditContentPage({ params }: { params: Promise<{ id: stri
                   </div>
                 </div>
 
-                {/* Dynamic Quote Text Block if Book/Quote */}
-                {(type === "Quote" || type === "Book") && quoteText && (
+                {/* Dynamic Quote Text Block if Book */}
+                {type === "Book" && quoteText && (
                   <div className="bg-primary-navy/[0.01] border-l-2 border-accent-gold p-2.5 rounded-r-lg text-left font-heading text-xs italic text-primary-navy/80 leading-relaxed">
                     &ldquo;{quoteText}&rdquo;
                   </div>

@@ -104,13 +104,18 @@ export default function CommentsPage() {
               className="bg-white border border-border-custom rounded-card p-6 shadow-soft hover:shadow-premium flex flex-col sm:flex-row sm:items-start justify-between gap-5 transition-all duration-300"
             >
               <div className="flex gap-4 items-start flex-1 min-w-0">
-                {/* User Avatar */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={c.authorAvatar}
-                  alt={c.authorName}
-                  className="w-10 h-10 rounded-full object-cover border border-border-custom mt-0.5 flex-shrink-0"
-                />
+                {c.authorAvatar ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={c.authorAvatar}
+                    alt={c.authorName}
+                    className="w-10 h-10 rounded-full object-cover border border-border-custom mt-0.5 flex-shrink-0"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-primary-navy text-white text-xs font-bold flex items-center justify-center mt-0.5 flex-shrink-0">
+                    {c.authorName?.charAt(0).toUpperCase() || 'U'}
+                  </div>
+                )}
                 <div className="space-y-2 min-w-0 flex-1 text-left">
                   <div className="flex items-center gap-3">
                     <span className="text-xs font-semibold text-primary-navy">{c.authorName}</span>

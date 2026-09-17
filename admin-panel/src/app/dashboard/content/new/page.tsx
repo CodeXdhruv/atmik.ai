@@ -23,7 +23,7 @@ import { apiService } from "@/services/api";
 import Link from "next/link";
 import toast, { Toaster } from "react-hot-toast";
 
-type ContentType = 'Book' | 'Article' | 'Quote';
+type ContentType = 'Book' | 'Article';
 
 export default function AddContentPage() {
   const router = useRouter();
@@ -58,8 +58,7 @@ export default function AddContentPage() {
 
   const contentTypes = [
     { name: "Book" as ContentType, icon: Book },
-    { name: "Article" as ContentType, icon: FileText },
-    { name: "Quote" as ContentType, icon: QuoteIcon }
+    { name: "Article" as ContentType, icon: FileText }
   ];
 
   const handleSave = async (isDraft: boolean) => {
@@ -100,7 +99,7 @@ export default function AddContentPage() {
         category,
         tags: selectedTags,
         featured,
-        quoteText: type === "Quote" || type === "Book" ? quoteText : undefined,
+        quoteText: type === "Book" ? quoteText : undefined,
         description,
         thumbnail: thumbnail?.url || "/mock/placeholder.jpg",
         fileUrl: pdfFile?.url,
@@ -283,8 +282,8 @@ export default function AddContentPage() {
               </div>
             </div>
 
-            {/* Quote box - only visible if Quote or Book type */}
-            {(type === "Quote" || type === "Book") && (
+            {/* Quote box - only visible if Book type */}
+            {type === "Book" && (
               <div className="space-y-1.5 pt-2">
                 <label className="text-[10px] font-semibold text-primary-navy/60 uppercase tracking-wider font-ui">
                   Featured Quote Preview Text
@@ -477,8 +476,8 @@ export default function AddContentPage() {
                   </div>
                 </div>
 
-                {/* Dynamic Quote Text Block if Book/Quote */}
-                {(type === "Quote" || type === "Book") && quoteText && (
+                {/* Dynamic Quote Text Block if Book */}
+                {type === "Book" && quoteText && (
                   <div className="bg-primary-navy/[0.01] border-l-2 border-accent-gold p-2.5 rounded-r-lg text-left font-heading text-xs italic text-primary-navy/80 leading-relaxed">
                     &ldquo;{quoteText}&rdquo;
                   </div>

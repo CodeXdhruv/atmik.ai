@@ -118,12 +118,18 @@ export default function ActivityLogsPage() {
 
                 {/* Log card */}
                 <div className="flex-1 bg-background/35 border border-border-custom hover:border-accent-gold/20 p-4.5 rounded-2xl flex items-start gap-4 transition-all">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={log.adminAvatar}
-                    alt={log.adminName}
-                    className="w-8 h-8 rounded-full object-cover border border-border-custom mt-0.5 flex-shrink-0"
-                  />
+                  {log.adminAvatar ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={log.adminAvatar}
+                      alt={log.adminName}
+                      className="w-8 h-8 rounded-full object-cover border border-border-custom mt-0.5 flex-shrink-0"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-primary-navy text-white text-[10px] font-bold flex items-center justify-center border border-border-custom mt-0.5 flex-shrink-0">
+                      {log.adminName?.charAt(0).toUpperCase() || 'A'}
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3">
                       <span className="text-xs font-semibold text-primary-navy">{log.adminName}</span>
