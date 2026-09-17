@@ -33,7 +33,7 @@ journey.get('/today', async (c) => {
     ).all();
 
     if (!poolRes.results || poolRes.results.length === 0) {
-      return c.json({ success: false, message: 'No journey items found in pool' }, 444);
+      return c.json({ success: false, message: 'No journey items found in pool' }, 404);
     }
 
     // 2. Calculate deterministic daily index based on 12:00 AM midnight (IST UTC+5:30)

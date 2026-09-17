@@ -12,6 +12,7 @@ import migrateRoutes from './routes/migrate';
 import adminRoutes from './routes/admin';
 import notificationsRoutes from './routes/notifications';
 import journeyRoutes from './routes/journey';
+import forYouRoutes from './routes/forYou';
 
 const app = new Hono<{ Bindings: Bindings }>();
 
@@ -153,6 +154,8 @@ app.route('/api/admin', adminRoutes);
 app.route('/api/notifications', notificationsRoutes);
 app.route('/api/journey', journeyRoutes);
 app.route('/api/admin/journey', journeyRoutes);
+app.route('/api/for-you', forYouRoutes);
+app.route('/api/admin/for-you', forYouRoutes);
 
 // Error handling
 app.onError((err, c) => {

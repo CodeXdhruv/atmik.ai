@@ -280,4 +280,100 @@ admin.post('/journey/upload', async (c) => {
   }
 });
 
+admin.post('/for-you/upload', async (c) => {
+  try {
+    const rawPayload = await c.req.json();
+    const items = Array.isArray(rawPayload)
+      ? rawPayload
+      : (rawPayload.experiences || rawPayload.items || rawPayload.data || [rawPayload]);
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return c.json({ error: 'Expected an array of for-you items' }, 400);
+    }
+
+    // 1. Delete old for-you JSON file(s) from R2 bucket and upload the new JSON file
+    try {
+      if (c.env.R2) {
+        const objectsList = await c.env.R2.list({ prefix: 'for_you/' });
+        for (const obj of objectsList.objects) {
+          await c.env.R2.delete(obj.key);
+        }
+
+        const R2_KEY = 'for_you/for_you_pool.json';
+        await c.env.R2.put(R2_KEY, JSON.stringify(items, null, 2), {
+          httpMetadata: { contentType: 'application/json' },
+        });
+      }
+    } catch (r2Error) {
+      console.error('R2 For You deletion/upload error:', r2Error);
+    }
+
+    // 2. Ensure table exists & clear old entries in D1 database
+    try {
+      await c.env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS ForYouPool (
+            id TEXT PRIMARY KEY,
+            label TEXT NOT NULL,
+            question TEXT NOT NULL,
+            helper TEXT NOT NULL,
+            releaseOptions TEXT NOT NULL,
+            transitionLabel TEXT NOT NULL,
+            secondQuestion TEXT NOT NULL,
+            spaceOptions TEXT NOT NULL,
+            completion TEXT NOT NULL,
+            response_messages TEXT,
+            createdAt TEXT NOT NULL
+        )
+      `).run();
+    } catch (e) {}
+
+    await c.env.DB.prepare('DELETE FROM ForYouPool').run();
+
+    // 3. Insert new items into D1 database
+    const stmt = c.env.DB.prepare(
+      `INSERT INTO ForYouPool (
+        id, label, question, helper, releaseOptions, transitionLabel, secondQuestion, spaceOptions, completion, response_messages, createdAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+
+    const batch = items.map((item: any, idx: number) => {
+      const id = item.id || `for_you_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 7)}`;
+      const label = item.label || 'RELEASE';
+      const question = item.question || '';
+      const helper = item.helper || '';
+      const releaseOptions = JSON.stringify(item.releaseOptions || []);
+      const transitionLabel = item.transitionLabel || 'MAKE SPACE';
+      const secondQuestion = item.secondQuestion || '';
+      const spaceOptions = JSON.stringify(item.spaceOptions || []);
+      const completion = JSON.stringify(item.completion || {
+        title: 'A little more space.',
+        message_template: null,
+        message_templates: [
+          'You noticed {first_choice} and made space for {second_choice}. Let that be enough for this moment.'
+        ],
+        message_selection: {
+          strategy: 'deterministic_from_selected_choices',
+          formula: '(firstChoiceIndex + secondChoiceIndex + experienceIndex) % message_templates.length',
+          fallbackIndex: 0
+        }
+      });
+      const responseMessages = JSON.stringify(item.response_messages || { first_choice: {}, second_choice: {} });
+      const createdAt = new Date().toISOString();
+
+      return stmt.bind(
+        id, label, question, helper, releaseOptions, transitionLabel, secondQuestion, spaceOptions, completion, responseMessages, createdAt
+      );
+    });
+
+    const CHUNK_SIZE = 50;
+    for (let i = 0; i < batch.length; i += CHUNK_SIZE) {
+      await c.env.DB.batch(batch.slice(i, i + CHUNK_SIZE));
+    }
+
+    return c.json({ success: true, count: batch.length, message: `Old for-you pool deleted. Successfully uploaded ${batch.length} new daily micro-experiences to D1 and R2.` });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
 export default admin;

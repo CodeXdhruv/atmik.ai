@@ -16,8 +16,8 @@ const MAX_AUDIO_BYTES = 2 * 1024 * 1024;
  * Bypasses the buggy c.env.AI.run() binding which mangles large byte arrays
  * during internal JSON serialization.
  */
-async function transcribeAudio(ai: any, audioBytes: Uint8Array): Promise<string> {
-  console.log(`🎙️ [Backend] Transcribing audio chunk size: ${audioBytes.byteLength} bytes`);
+async function transcribeAudio(ai: any, audioBytes: Uint8Array, lang: string = 'hi'): Promise<string> {
+  console.log(`🎙️ [Backend] Transcribing audio chunk size: ${audioBytes.byteLength} bytes (lang: ${lang})`);
   
   if (audioBytes.byteLength < 1000) {
     console.warn(`🎙️ [Backend] Audio payload too short (${audioBytes.byteLength} bytes).`);
@@ -27,12 +27,19 @@ async function transcribeAudio(ai: any, audioBytes: Uint8Array): Promise<string>
   // Convert full Uint8Array to Array safely without stack overflow, preserving full audio container
   const fullAudioArray = Array.from(audioBytes);
 
+  const targetLang = (lang || 'hi').toLowerCase();
+  const whisperPrompt = targetLang === 'hi' ? 'यह हिंदी भाषा में बातचीत है।' : undefined;
+
   // Strategy 1: @cf/openai/whisper-large-v3-turbo
   try {
-    console.log(`🎙️ [Backend] Calling whisper-large-v3-turbo with full audio (${fullAudioArray.length} items)`);
-    const response: any = await ai.run('@cf/openai/whisper-large-v3-turbo', {
-      audio: fullAudioArray
-    });
+    console.log(`🎙️ [Backend] Calling whisper-large-v3-turbo with full audio (${fullAudioArray.length} items), language: ${targetLang}`);
+    const payload: any = {
+      audio: fullAudioArray,
+      language: targetLang
+    };
+    if (whisperPrompt) payload.prompt = whisperPrompt;
+
+    const response: any = await ai.run('@cf/openai/whisper-large-v3-turbo', payload);
     console.log(`🎙️ [Backend] Raw Whisper AI response:`, JSON.stringify(response));
     const text = response?.text?.trim();
     if (text && text.length > 0) {
@@ -45,10 +52,14 @@ async function transcribeAudio(ai: any, audioBytes: Uint8Array): Promise<string>
 
   // Strategy 2: @cf/openai/whisper (v1 model)
   try {
-    console.log(`🎙️ [Backend] Calling @cf/openai/whisper with full audio (${fullAudioArray.length} items)`);
-    const response: any = await ai.run('@cf/openai/whisper', {
-      audio: fullAudioArray
-    });
+    console.log(`🎙️ [Backend] Calling @cf/openai/whisper with full audio (${fullAudioArray.length} items), language: ${targetLang}`);
+    const payload: any = {
+      audio: fullAudioArray,
+      language: targetLang
+    };
+    if (whisperPrompt) payload.prompt = whisperPrompt;
+
+    const response: any = await ai.run('@cf/openai/whisper', payload);
     console.log(`🎙️ [Backend] Raw Whisper v1 response:`, JSON.stringify(response));
     const text = response?.text?.trim();
     if (text && text.length > 0) {
@@ -86,7 +97,7 @@ voice.get('/', upgradeWebSocket((c) => {
           try {
             // 1. STT: Transcribe audio using Whisper
             console.log('🎙️ [Backend] Sending audio to Whisper (STT)...');
-            const transcribedText = await transcribeAudio(c.env.AI, audioBytes);
+            const transcribedText = await transcribeAudio(c.env.AI, audioBytes, sessionLang);
             console.log(`🎙️ [Backend] Transcription Result: "${transcribedText}"`);
 
             if (!transcribedText || transcribedText.trim().length === 0) {
@@ -150,7 +161,7 @@ voice.get('/', upgradeWebSocket((c) => {
           try {
             // 1. STT: Transcribe audio using Whisper
             console.log('🎙️ [Backend] Sending audio to Whisper (STT)...');
-            const transcribedText = await transcribeAudio(c.env.AI, bytes);
+            const transcribedText = await transcribeAudio(c.env.AI, bytes, sessionLang);
             console.log(`🎙️ [Backend] Transcription Result: "${transcribedText}"`);
 
             if (!transcribedText || transcribedText.trim().length === 0) {
