@@ -31,16 +31,6 @@ ws.on('open', () => {
     userId: 'test_script_user',
     lang: lang
   }));
-
-  // Send the audio file as if it's from the mobile app
-  console.log(`Sending audio chunk (${lang})... Base64 length: ${audioBase64.length}`);
-  ws.startTime = Date.now();
-  ws.send(JSON.stringify({
-    type: 'audio_chunk',
-    userId: 'test_script_user',
-    lang: lang,
-    audioBase64: audioBase64
-  }));
 });
 
 let ttsReceived = 0;
@@ -52,6 +42,16 @@ ws.on('message', (data) => {
   switch (msg.type) {
     case 'transcription':
       console.log(`[STT Transcription] -> ${msg.text}`);
+      break;
+    case 'session_ready':
+      console.log('[Status] Session ready. Sending audio chunk...');
+      ws.startTime = Date.now();
+      ws.send(JSON.stringify({
+        type: 'audio_chunk',
+        userId: 'test_script_user',
+        lang: lang,
+        audioBase64: audioBase64
+      }));
       break;
     case 'text_stream':
       process.stdout.write(msg.text);
