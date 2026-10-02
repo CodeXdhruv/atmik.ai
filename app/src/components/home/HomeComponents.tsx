@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Spacing, Radius, Shadows } from '@/constants/theme';
 import forYouData from '../../../assets/for_you_today.json';
 import { apiService } from '../../services/api';
+import { useAppStore } from '../../store/useAppStore';
 
 // ── Design tokens ──────────────────────────────────────────────
 const CARD_BG    = '#F9F3EA';   
@@ -558,7 +559,7 @@ interface RecommendedSectionProps {
 }
 
 // ─── Featured Book Card ──────────────────────────────────
-const FeaturedBookCard = ({
+export const FeaturedBookCard = ({
   item,
   onPress,
 }: {
@@ -568,6 +569,8 @@ const FeaturedBookCard = ({
   const coverSource = item.coverUrl
     ? { uri: item.coverUrl }
     : require('@/assets/images/mountain_bg.png');
+
+  const isBookmarked = useAppStore(state => state.bookmarks.includes(item.id));
 
   return (
     <TouchableOpacity
@@ -596,11 +599,20 @@ const FeaturedBookCard = ({
           <Text style={stylesRecommendedSection.bookAuthor} numberOfLines={1}>
             {item.author || 'Dr. Swatantra Jain'}
           </Text>
-          <Bookmark
-            color={Colors.textSecondary}
-            size={15}
-            strokeWidth={1.5}
-          />
+          <TouchableOpacity 
+            onPress={() => {
+              useAppStore.getState().toggleBookmarkLocal(item.id);
+              apiService.toggleBookmark(item.id);
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Bookmark
+              color={isBookmarked ? Colors.primary : Colors.textSecondary}
+              fill={isBookmarked ? Colors.primary : 'transparent'}
+              size={16}
+              strokeWidth={1.5}
+            />
+          </TouchableOpacity>
         </View>
       </View>
     </TouchableOpacity>
@@ -608,7 +620,7 @@ const FeaturedBookCard = ({
 };
 
 // ─── Article Recommendation Card ─────────────────────────
-const ArticleRecommendationCard = ({
+export const ArticleRecommendationCard = ({
   item,
   onPress,
 }: {
@@ -618,6 +630,8 @@ const ArticleRecommendationCard = ({
   const thumbSource = item.coverUrl
     ? { uri: item.coverUrl }
     : require('@/assets/images/quotes_background.webp');
+
+  const isBookmarked = useAppStore(state => state.bookmarks.includes(item.id));
 
   return (
     <TouchableOpacity
@@ -640,11 +654,21 @@ const ArticleRecommendationCard = ({
 
       {/* Right side — thumbnail + bookmark */}
       <View style={stylesRecommendedSection.articleRightCol}>
-        <Bookmark
-          color={Colors.textSecondary}
-          size={14}
-          strokeWidth={1.5}
-        />
+        <TouchableOpacity 
+          style={{ marginBottom: 4 }}
+          onPress={() => {
+            useAppStore.getState().toggleBookmarkLocal(item.id);
+            apiService.toggleBookmark(item.id);
+          }}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Bookmark
+            color={isBookmarked ? Colors.primary : Colors.textSecondary}
+            fill={isBookmarked ? Colors.primary : 'transparent'}
+            size={16}
+            strokeWidth={1.5}
+          />
+        </TouchableOpacity>
         <Image
           source={thumbSource}
           style={stylesRecommendedSection.articleThumb}
