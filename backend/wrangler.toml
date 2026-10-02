@@ -27,7 +27,9 @@ index_name = "atmik-index-v2"
 [vars]
 FIREBASE_PROJECT_ID = "swatantra-ai"
 TTS_ENDPOINT = "https://dr-swatantra-ai.onrender.com/speech/v1/tts"
-YOURVOIC_API_KEY = "yv_live_277c11b20760dda5b9a93de4f19da9930f181c6b76b1307a"
+# YOURVOIC_API_KEY is a Worker secret, not a var.
+# Production: wrangler secret put YOURVOIC_API_KEY
+# Local: backend/.dev.vars (gitignored)
 
 [observability.logs]
 enabled = true
