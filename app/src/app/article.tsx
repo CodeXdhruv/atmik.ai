@@ -27,9 +27,15 @@ export default function ArticleScreen() {
     Keyboard.dismiss();
   }, []);
 
-  const htmlContent = typeof description === 'string' && description.trim() !== '' 
-    ? description 
+  const rawHtml = typeof description === 'string' && description.trim() !== ''
+    ? description
     : `<p>No article content available. This article might have been uploaded as a PDF only.</p>`;
+  const coverInBody = hasValidCover
+    ? rawCover!.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    : '';
+  const htmlContent = coverInBody
+    ? rawHtml.replace(new RegExp(`<img\\b[^>]*src=["']${coverInBody}["'][^>]*>`, 'gi'), '')
+    : rawHtml;
 
   const tagsStyles = {
     body: {
@@ -114,17 +120,6 @@ export default function ArticleScreen() {
 
         {/* Article Body */}
         <View style={styles.articleBody}>
-          {hasValidCover && (
-            <View style={styles.bodyImageContainer}>
-              <Image
-                source={{ uri: validCoverUrl }}
-                style={styles.bodyImage}
-                contentFit="cover"
-                transition={300}
-              />
-            </View>
-          )}
-
           <RenderHTML
             contentWidth={width - 48} // 24px padding on each side
             source={{ html: htmlContent }}
@@ -206,22 +201,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 32,
     paddingBottom: 80,
-  },
-  bodyImageContainer: {
-    width: '100%',
-    height: 220,
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: 24,
-    backgroundColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  bodyImage: {
-    width: '100%',
-    height: '100%',
   },
 });
