@@ -20,8 +20,11 @@ const zustandStorage: StateStorage = {
 interface AppState {
   hasCompletedOnboarding: boolean;
   userName: string;
+  bookmarks: string[];
   setHasCompletedOnboarding: (status: boolean) => void;
   setUserName: (name: string) => void;
+  toggleBookmarkLocal: (contentId: string) => void;
+  setBookmarks: (bookmarks: string[]) => void;
   clearStore: () => void;
 }
 
@@ -30,9 +33,19 @@ export const useAppStore = create<AppState>()(
     (set) => ({
       hasCompletedOnboarding: false,
       userName: 'Rahul',
+      bookmarks: [],
       setHasCompletedOnboarding: (status) => set({ hasCompletedOnboarding: status }),
       setUserName: (name) => set({ userName: name }),
-      clearStore: () => set({ hasCompletedOnboarding: false, userName: '' }),
+      toggleBookmarkLocal: (contentId) => set((state) => {
+        const exists = state.bookmarks.includes(contentId);
+        return {
+          bookmarks: exists 
+            ? state.bookmarks.filter(id => id !== contentId)
+            : [...state.bookmarks, contentId]
+        };
+      }),
+      setBookmarks: (bookmarks) => set({ bookmarks }),
+      clearStore: () => set({ hasCompletedOnboarding: false, userName: '', bookmarks: [] }),
     }),
     {
       name: 'dr-atmik-ai-storage',
