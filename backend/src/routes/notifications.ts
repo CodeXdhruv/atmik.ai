@@ -1,21 +1,14 @@
 import { Hono } from 'hono';
 import { Bindings } from '../types/env';
-import { verifyFirebaseToken } from '../utils/auth';
+import { authenticate } from '../utils/auth';
 
 const notifications = new Hono<{ Bindings: Bindings, Variables: { user: any } }>();
 
 // Auth middleware for user routes
 notifications.use('*', async (c, next) => {
-  const authHeader = c.req.header('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const payload = await authenticate(c);
+  if (!payload?.sub) {
     return c.json({ error: 'Unauthorized' }, 401);
-  }
-
-  const token = authHeader.split('Bearer ')[1];
-  const payload = await verifyFirebaseToken(token, c.env.FIREBASE_PROJECT_ID);
-
-  if (!payload || !payload.sub) {
-    return c.json({ error: 'Invalid or expired token' }, 401);
   }
 
   // Get user ID from Firebase UID
@@ -49,7 +42,8 @@ notifications.get('/', async (c) => {
 
     return c.json({ success: true, data: results });
   } catch (error: any) {
-    return c.json({ error: error.message }, 500);
+    console.error('Notifications fetch failed', error);
+    return c.json({ error: 'Could not load notifications' }, 500);
   }
 });
 
