@@ -1,120 +1,98 @@
 import { Bindings } from '../types/env';
+import { withTimeout } from './timeout';
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
+async function readAudio(response: unknown): Promise<Uint8Array | null> {
+  if (!response) return null;
+  if (response instanceof ArrayBuffer) {
+    return response.byteLength > 80 ? new Uint8Array(response) : null;
   }
-  return btoa(binary);
+  if (ArrayBuffer.isView(response)) {
+    const view = new Uint8Array(response.buffer, response.byteOffset, response.byteLength);
+    return view.byteLength > 80 ? view : null;
+  }
+  const buffer = await new Response(response as BodyInit).arrayBuffer();
+  if (buffer.byteLength < 80) return null;
+  return new Uint8Array(buffer);
 }
 
-export async function synthesize(env: Bindings, text: string, emotionTag: string = 'neutral', lang: string = 'en'): Promise<string | null> {
+async function englishVoice(env: Bindings, text: string): Promise<Uint8Array | null> {
+  const response = await withTimeout(
+    env.AI.run('@cf/deepgram/aura-1', { text, speaker: 'luna' }),
+    20_000,
+    'English voice',
+  );
+  return readAudio(response);
+}
+
+async function requestHindiVoice(env: Bindings, text: string, model: string): Promise<Uint8Array | null> {
+  const key = env.YOURVOIC_API_KEY;
+  if (!key) return null;
+  const response = await fetch('https://yourvoic.com/api/v1/tts/generate', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': key,
+      Authorization: `Bearer ${key}`,
+    },
+    signal: AbortSignal.timeout(20_000),
+    body: JSON.stringify({
+      text,
+      model,
+      language: 'hi-IN',
+      voice: 'Deepika',
+      speed: 0.94,
+      format: 'mp3',
+    }),
+  });
+  if (!response.ok) {
+    console.error(`YourVoic ${model} error:`, await response.text());
+    return null;
+  }
+  const audio = new Uint8Array(await response.arrayBuffer());
+  return audio.byteLength > 80 ? audio : null;
+}
+
+async function hindiVoice(env: Bindings, text: string): Promise<Uint8Array | null> {
+  const natural = await requestHindiVoice(env, text, 'aura-prime');
+  if (natural) return natural;
+  return requestHindiVoice(env, text, 'aura-lite');
+}
+
+export async function synthesizeBytes(env: Bindings, text: string, lang: string = 'en'): Promise<Uint8Array | null> {
+  const cleanLang = (lang || 'en').toLowerCase().trim();
   try {
-    const cleanLang = (lang || 'en').toLowerCase().trim();
-    
-    // Route English to Cloudflare's edge-hosted Deepgram Aura female models (<300ms latency)
     if (cleanLang === 'en' || cleanLang.startsWith('en')) {
-      const normEmotion = (emotionTag || '').toLowerCase().trim();
-      let femaleSpeaker = 'asteria'; // Default: smooth, warm female voice
-
-      if (normEmotion.includes('joy') || normEmotion.includes('encourag') || normEmotion.includes('enthusiast')) {
-        femaleSpeaker = 'stella'; // Bright, enthusiastic female voice
-      } else if (normEmotion.includes('calm') || normEmotion.includes('empath') || normEmotion.includes('sad')) {
-        femaleSpeaker = 'luna'; // Smooth, gentle, empathetic female voice
-      }
-
-      console.log(`🎙️ [TTS] Synthesizing English Female Voice (${femaleSpeaker}) for emotion [${normEmotion}]: "${text}"`);
-      
-      let response: any;
-      try {
-        response = await env.AI.run('@cf/deepgram/aura-1', { text, speaker: femaleSpeaker });
-      } catch (err) {
-        // Fallback to direct model name endpoint if speaker property varies
-        try {
-          response = await env.AI.run(`@cf/deepgram/aura-${femaleSpeaker}-en` as any, { text });
-        } catch (e) {
-          response = await env.AI.run('@cf/deepgram/aura-1', { text });
-        }
-      }
-
-      if (response) {
-        const audioBuffer = await new Response(response).arrayBuffer();
-        return arrayBufferToBase64(audioBuffer);
-      }
-    } else {
-      // Route Hindi to YourVoic Aura Lite API if API key is provided
-      if (env.YOURVOIC_API_KEY) {
-        console.log(`🎙️ [TTS] Using YourVoic Aura Lite for Hindi: "${text}"`);
-        const normEmotion = (emotionTag || '').toLowerCase().trim();
-        let hindiVoice = 'Deepika'; // Default smooth female voice
-
-        if (normEmotion.includes('joy') || normEmotion.includes('encourag')) {
-          hindiVoice = 'Tanvi';
-        } else if (normEmotion.includes('calm') || normEmotion.includes('empath')) {
-          hindiVoice = 'Kavita';
-        }
-
-        try {
-          const response = await fetch('https://yourvoic.com/api/v1/tts/generate', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-API-Key': env.YOURVOIC_API_KEY,
-              'Authorization': `Bearer ${env.YOURVOIC_API_KEY}`
-            },
-            body: JSON.stringify({
-              text: text,
-              model: 'aura-lite',
-              language: 'hi',
-              voice: hindiVoice,
-              speed: 1.0
-            })
-          });
-
-          if (response.ok) {
-            const audioBuffer = await response.arrayBuffer();
-            return arrayBufferToBase64(audioBuffer);
-          } else {
-            console.error("YourVoic API error response:", await response.text());
-          }
-        } catch (yvErr) {
-          console.error("YourVoic API exception:", yvErr);
-        }
-      }
-
-      // Fallback: Hosted Piper TTS service on Render free tier
-      console.log(`🎙️ [TTS] Using Hosted Piper TTS for Hindi (${cleanLang}): "${text}"`);
-      if (!env.TTS_ENDPOINT) {
-        console.warn("TTS_ENDPOINT not configured");
-        return null;
-      }
-
-      const ttsResponse = await fetch(env.TTS_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          inputs: text,
-          language: cleanLang,
-          emotion: emotionTag.replace('[emotion: ', '').replace(']', '').trim()
-        })
-      });
-
-      if (ttsResponse.ok) {
-        const audioBuffer = await ttsResponse.arrayBuffer();
-        return arrayBufferToBase64(audioBuffer);
-      } else {
-        console.error("TTS Error from hosted API:", await ttsResponse.text());
-        return null;
-      }
+      console.log(`🎙️ [TTS] English edge voice: "${text}"`);
+      return await englishVoice(env, text);
     }
-    return null;
+    console.log(`🎙️ [TTS] Hindi voice: "${text}"`);
+    const hindi = await hindiVoice(env, text);
+    if (hindi) return hindi;
+    if (!env.TTS_ENDPOINT) return null;
+    console.log(`🎙️ [TTS] Hindi backup voice: "${text}"`);
+    const backup = await fetch(env.TTS_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(20_000),
+      body: JSON.stringify({ inputs: text, language: 'hi', emotion: 'neutral' }),
+    });
+    if (!backup.ok) return null;
+    const audio = new Uint8Array(await backup.arrayBuffer());
+    return audio.byteLength > 80 ? audio : null;
   } catch (err) {
-    console.error("TTS Exception:", err);
+    console.error('TTS Exception:', err);
     return null;
   }
 }
 
+export async function warmVoice(env: Bindings, lang: string): Promise<void> {
+  try {
+    if ((lang || 'hi').toLowerCase().startsWith('en')) {
+      await englishVoice(env, 'Hello.');
+      return;
+    }
+    await hindiVoice(env, 'नमस्ते');
+  } catch (err) {
+    console.warn('🎙️ [TTS] Voice warm-up failed', err);
+  }
+}
