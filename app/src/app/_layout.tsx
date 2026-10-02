@@ -1,3 +1,4 @@
+import '../firebaseSilence';
 import { DarkTheme, DefaultTheme, ThemeProvider, Stack } from 'expo-router';
 import { useColorScheme, LogBox } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -11,6 +12,8 @@ SplashScreen.preventAutoHideAsync();
 // Ignore the known upstream Expo Router / React Navigation warning about early linking updates
 LogBox.ignoreLogs([
   "Can't perform a React state update on a component that hasn't mounted yet",
+  "This method is deprecated (as well as all React Native Firebase namespaced API)",
+  "Please use `getApp()` instead."
 ]);
 
 const CustomTheme = {
