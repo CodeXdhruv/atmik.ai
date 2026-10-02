@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { Bindings } from '../types/env';
 
-import { verifyFirebaseToken } from '../utils/auth';
+import { assertAdmin, authenticate } from '../utils/auth';
 
 const library = new Hono<{ Bindings: Bindings, Variables: { user: any } }>();
 
@@ -13,45 +13,18 @@ library.use('*', async (c, next) => {
     return;
   }
 
-  const authHeader = c.req.header('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const payload = await authenticate(c);
+  if (!payload) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
-  const token = authHeader.split('Bearer ')[1];
-  
-  if (token === 'temp-user-token') {
-    // Keep this bypass ONLY for the mobile app right now since mobile app doesn't have Firebase Auth fully setup yet
-    c.set('user', { sub: 'dev-user' });
-    await next();
-    return;
+  if (c.req.method !== 'GET') {
+    const denied = await assertAdmin(c);
+    if (denied) return denied;
+  } else {
+    c.set('user', payload);
   }
 
-
-  let payload;
-  try {
-    payload = await verifyFirebaseToken(token, c.env.FIREBASE_PROJECT_ID);
-  } catch (err: any) {
-    return c.json({ error: `Verification threw: ${err.message}` }, 401);
-  }
-
-  if (!payload || !payload.sub) {
-    return c.json({ error: `Invalid or expired token. verifyFirebaseToken returned null.` }, 401);
-  }
-
-  // Check if user has ADMIN role in D1 database
-  const { results } = await c.env.DB.prepare('SELECT role FROM User WHERE firebaseUid = ?')
-    .bind(payload.sub)
-    .all();
-
-  if (results.length === 0 || results[0].role !== 'ADMIN') {
-    // Enforce ADMIN role only for modifications (POST/PUT/DELETE)
-    if (c.req.method !== 'GET') {
-      return c.json({ error: 'Forbidden: Admins only' }, 403);
-    }
-  }
-
-  c.set('user', payload);
   await next();
 });
 
