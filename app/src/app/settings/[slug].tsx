@@ -23,6 +23,7 @@ import {
   AlertTriangle 
 } from 'lucide-react-native';
 import auth from '@react-native-firebase/auth';
+import { apiService } from '@/services/api';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as Notifications from 'expo-notifications';
 import packageJson from '../../../package.json';
@@ -425,6 +426,11 @@ function DeleteAccountView({ router }: { router: any }) {
             try {
               const user = auth().currentUser;
               if (user) {
+                const removed = await apiService.deleteAccount();
+                if (!removed) {
+                  Alert.alert('Could not delete account', 'Your data is still on the server. Check your connection and try again.');
+                  return;
+                }
                 await user.delete();
                 try {
                   await GoogleSignin.signOut();
@@ -434,7 +440,7 @@ function DeleteAccountView({ router }: { router: any }) {
             } catch (error: any) {
               console.error(error);
               if (error.code === 'auth/requires-recent-login') {
-                Alert.alert("Re-authentication required", "Please sign out and sign back in to verify your identity before deleting your account.");
+                Alert.alert('Sign in again to finish', 'Your chats and account data are already removed. Sign out, sign back in, and tap delete once more to remove the login.');
               } else {
                 Alert.alert("Error", "An error occurred while deleting your account.");
               }
