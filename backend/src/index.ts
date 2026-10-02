@@ -13,13 +13,18 @@ import adminRoutes from './routes/admin';
 import notificationsRoutes from './routes/notifications';
 import journeyRoutes from './routes/journey';
 import forYouRoutes from './routes/forYou';
+import bookmarksRoutes from './routes/bookmarks';
 
 const app = new Hono<{ Bindings: Bindings }>();
 
 // Middleware
 app.use('*', logger());
 app.use('*', cors({
-  origin: '*', // Restrict this in production
+  origin: (origin) => {
+    if (!origin) return '*';
+    if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) return origin;
+    return origin;
+  },
   allowHeaders: ['Content-Type', 'Authorization'],
 }));
 
@@ -136,6 +141,7 @@ app.get('/', (c) => {
             <li><span class="method api">API</span> <span class="path">/api/chat/*</span></li>
             <li><span class="method api">API</span> <span class="path">/api/migrate/*</span></li>
             <li><span class="method api">API</span> <span class="path">/api/admin/*</span></li>
+            <li><span class="method api">API</span> <span class="path">/api/bookmarks/*</span></li>
           </ul>
         </div>
       </div>
@@ -156,11 +162,12 @@ app.route('/api/journey', journeyRoutes);
 app.route('/api/admin/journey', journeyRoutes);
 app.route('/api/for-you', forYouRoutes);
 app.route('/api/admin/for-you', forYouRoutes);
+app.route('/api/bookmarks', bookmarksRoutes);
 
 // Error handling
 app.onError((err, c) => {
   console.error(err);
-  return c.json({ error: 'Internal Server Error', message: err.message }, 500);
+  return c.json({ error: 'Internal Server Error' }, 500);
 });
 
 export default app;
