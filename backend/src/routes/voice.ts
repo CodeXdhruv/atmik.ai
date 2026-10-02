@@ -3,9 +3,9 @@ import { upgradeWebSocket } from 'hono/cloudflare-workers';
 import { Bindings } from '../types/env';
 import { retrieveContext } from '../lib/retrieval';
 import { getSystemPrompt } from '../lib/prompts';
-import { synthesizeBytes, warmVoice } from '../lib/tts';
+import { feelingFromUser, synthesizeBytes, warmVoice } from '../lib/tts';
 import { updateConversationContext } from '../lib/memory';
-import { shapeConversationalReply, shouldRetrieveKnowledge, wantsDeeperReply } from '../lib/speechText';
+import { shapeConversationalReply, shouldRetrieveKnowledge } from '../lib/speechText';
 import { verifyFirebaseToken } from '../utils/auth';
 import { allowRequest } from '../lib/rateLimit';
 import { withTimeout } from '../lib/timeout';
@@ -66,8 +66,9 @@ async function transcribeAudio(ai: any, audioBytes: Uint8Array, lang: string): P
     }), 6_000, 'Transcription');
     const fastText = transcriptOf(await readAiPayload(fast));
     if (fastText) {
-      console.log(`🎙️ [Backend] Transcript: "${fastText}"`);
-      return fastText;
+      const cleaned = tidyTranscript(fastText, targetLang);
+      console.log(`🎙️ [Backend] Transcript: "${cleaned}"`);
+      return cleaned;
     }
     console.warn('🎙️ [Backend] Fast transcription returned no text, using Whisper');
   } catch (err) {
@@ -79,9 +80,21 @@ async function transcribeAudio(ai: any, audioBytes: Uint8Array, lang: string): P
     language: targetLang,
   }), 18_000, 'Transcription');
 
-  const text = transcriptOf(await readAiPayload(response));
+  const text = tidyTranscript(transcriptOf(await readAiPayload(response)), targetLang);
   console.log(`🎙️ [Backend] Transcript: "${text}"`);
   return text;
+}
+
+function tidyTranscript(text: string, lang: string): string {
+  let next = text.replace(/\s+/g, ' ').trim();
+  if (!next || lang.startsWith('en')) return next;
+  next = next
+    .replace(/([।!?])(?=\S)/g, '$1 ')
+    .replace(/(हूँ|हूं|हैं|है|था|थी|थे|रहा|रही|रहे|रहता|रहती)(?=[\u0900-\u097F])/g, '$1 ')
+    .replace(/क्या(?=[\u0900-\u097F])/g, 'क्या ')
+    .replace(/बूडा|बुड़ा/g, 'बूढ़ा')
+    .replace(/अदमी/g, 'आदमी');
+  return next.replace(/\s+/g, ' ').trim();
 }
 
 function messageText(data: unknown): string | null {
@@ -285,11 +298,15 @@ async function processTranscription(c: any, ws: any, userId: string, lang: strin
   const summaryPromise = c.env.DB.prepare('SELECT currentSummary FROM ChatSession WHERE userId = ?')
     .bind(cleanUserId)
     .all();
-  const contextPromise = shouldRetrieveKnowledge(transcribedText)
-    ? retrieveContext(c.env, transcribedText, lang, 'voice').catch((err) => {
-        console.warn('Voice retrieval skipped', err);
-        return 'No relevant context found.';
-      })
+  const quickCheck = /सुन पा|hear me|can you hear|^(hi|hello|hey|नमस्ते|हाय)\b/i.test(transcribedText);
+  const contextPromise = !quickCheck && shouldRetrieveKnowledge(transcribedText)
+    ? Promise.race([
+        retrieveContext(c.env, transcribedText, lang, 'voice').catch((err) => {
+          console.warn('Voice retrieval skipped', err);
+          return 'No relevant context found.';
+        }),
+        new Promise<string>((resolve) => setTimeout(() => resolve('No relevant context found.'), 700)),
+      ])
     : Promise.resolve('No relevant context found.');
 
   const [{ results }, context] = await Promise.all([summaryPromise, contextPromise]);
@@ -302,7 +319,7 @@ async function processTranscription(c: any, ws: any, userId: string, lang: strin
       { role: 'system', content: systemPrompt },
       { role: 'user', content: transcribedText },
     ],
-    max_tokens: wantsDeeperReply(transcribedText) ? 220 : 160,
+    max_tokens: 180,
     stream: true,
   }), 20_000, 'Voice model');
 
@@ -310,9 +327,40 @@ async function processTranscription(c: any, ws: any, userId: string, lang: strin
   let published = '';
   const decoder = new TextDecoder();
 
-  const replyShape = wantsDeeperReply(transcribedText)
-    ? { maxSentences: 7, maxWords: 120 }
-    : { maxSentences: 4, maxWords: 70 };
+  const replyShape = { maxSentences: 6, maxWords: 120 };
+  const feeling = feelingFromUser(transcribedText);
+
+  const jobs: Promise<void>[] = [];
+  let handed = 0;
+  let clips = 0;
+  const queueSentence = (sentence: string) => {
+    const index = clips;
+    clips += 1;
+    console.log(`🎙️ [Backend] Speaking sentence ${index + 1}`);
+    jobs.push((async () => {
+      sendClip(index, sentence, await synthesizeBytes(c.env, sentence, lang, feeling));
+    })());
+  };
+  const drain = (flush: boolean) => {
+    const clean = shapeConversationalReply(rawResponse, replyShape);
+    let rest = clean.slice(handed);
+    const limit = replyShape.maxSentences ?? 2;
+    while (clips < limit) {
+      const match = rest.match(/^([\s\S]*?[.?!।])\s*/);
+      if (match && match[1].trim().length > 1) {
+        handed += match[0].length;
+        queueSentence(match[1].trim());
+        rest = clean.slice(handed);
+        continue;
+      }
+      if (flush && rest.trim().length > 1) {
+        handed = clean.length;
+        queueSentence(rest.trim());
+      }
+      break;
+    }
+    return clips >= limit;
+  };
 
   const publishText = () => {
     const clean = shapeConversationalReply(rawResponse, replyShape);
@@ -339,7 +387,9 @@ async function processTranscription(c: any, ws: any, userId: string, lang: strin
     ws.send(JSON.stringify({ type: 'tts_audio', index, skipped: true }));
   };
 
+  let replyReady = false;
   for await (const chunk of aiStream) {
+    if (replyReady) break;
     const decoded = decoder.decode(chunk as Uint8Array, { stream: true });
     for (const line of decoded.split('\n')) {
       if (!line.startsWith('data: ') || line.includes('[DONE]')) continue;
@@ -348,6 +398,10 @@ async function processTranscription(c: any, ws: any, userId: string, lang: strin
         if (data.response) {
           rawResponse += data.response;
           publishText();
+          if (drain(false)) {
+            replyReady = true;
+            break;
+          }
         }
       } catch {
         // ignore incomplete JSON chunks
@@ -356,19 +410,8 @@ async function processTranscription(c: any, ws: any, userId: string, lang: strin
   }
 
   const spokenReply = publishText();
-  const whole = spokenReply.trim();
-  const hindi = !(lang || '').toLowerCase().startsWith('en');
-  const sentences = hindi
-    ? [whole]
-    : (whole.match(/[^.?!।]+[.?!।]+|[^.?!।]+$/g) ?? [whole])
-      .map((sentence) => sentence.trim())
-      .filter((sentence) => sentence.length > 1);
-  let index = 0;
-  for (const sentence of sentences) {
-    console.log(`🎙️ [Backend] Speaking sentence ${index + 1}/${sentences.length}`);
-    sendClip(index, sentence, await synthesizeBytes(c.env, sentence, lang));
-    index += 1;
-  }
+  drain(true);
+  await Promise.all(jobs);
   console.log('🎙️ [Backend] Completed sending the spoken reply');
   ws.send(JSON.stringify({ type: 'generation_done' }));
 
