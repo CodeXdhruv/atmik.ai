@@ -86,11 +86,38 @@ class DBService {
     }
   }
   
-  /**
-   * Clear history (for testing purposes)
-   */
   async clearHistory(): Promise<void> {
     await AsyncStorage.setItem(DB_KEY, JSON.stringify([]));
+  }
+
+  /**
+   * Delete a specific reflection by ID
+   */
+  async deleteReflection(id: string): Promise<void> {
+    try {
+      const existingStr = await AsyncStorage.getItem(DB_KEY);
+      let existing: ReflectionRecord[] = existingStr ? JSON.parse(existingStr) : [];
+      existing = existing.filter(r => r.id !== id);
+      await AsyncStorage.setItem(DB_KEY, JSON.stringify(existing));
+    } catch (e) {
+      console.error('Failed to delete reflection', e);
+      throw e;
+    }
+  }
+
+  /**
+   * Update a specific reflection's user response
+   */
+  async updateReflection(id: string, newUserResponse: string): Promise<void> {
+    try {
+      const existingStr = await AsyncStorage.getItem(DB_KEY);
+      let existing: ReflectionRecord[] = existingStr ? JSON.parse(existingStr) : [];
+      existing = existing.map(r => r.id === id ? { ...r, userResponse: newUserResponse } : r);
+      await AsyncStorage.setItem(DB_KEY, JSON.stringify(existing));
+    } catch (e) {
+      console.error('Failed to update reflection', e);
+      throw e;
+    }
   }
 }
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Spacing, Radius } from '../../constants/theme';
 import { dbService, ReflectionRecord } from '../../services/db';
 import { ArrowLeft, MessageCircle, CircleDot, Star } from 'lucide-react-native';
@@ -20,14 +20,16 @@ export default function ReflectionsTimeline() {
   const [history, setHistory] = useState<ReflectionRecord[]>([]);
   const [filter, setFilter] = useState<'All' | 'Reflections' | 'Conversations' | 'Wisdom'>('All');
 
-  useEffect(() => {
-    const loadData = async () => {
-      // In a real app with pagination, we'd load page 1 and append on end reached.
-      const records = await dbService.getReflectionsHistory(1, 50);
-      setHistory(records);
-    };
-    loadData();
-  }, []);
+  useFocusEffect(
+    React.useCallback(() => {
+      const loadData = async () => {
+        // In a real app with pagination, we'd load page 1 and append on end reached.
+        const records = await dbService.getReflectionsHistory(1, 50);
+        setHistory(records);
+      };
+      loadData();
+    }, [])
+  );
 
   const getFilteredData = () => {
     if (filter === 'All') return history;

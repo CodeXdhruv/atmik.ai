@@ -16,10 +16,19 @@ export default function ReflectionDetail() {
       // In a real app we'd fetch directly by ID. Since our mock just returns history:
       const records = await dbService.getReflectionsHistory(1, 1000);
       const found = records.find(r => r.id === id);
-      if (found) setRecord(found);
+      if (found) {
+        setRecord(found);
+      }
     };
     loadRecord();
   }, [id]);
+
+  const handleDelete = async () => {
+    if (record) {
+      await dbService.deleteReflection(record.id);
+      router.back();
+    }
+  };
 
   const getLabel = (type: string) => {
     switch (type) {
@@ -50,7 +59,7 @@ export default function ReflectionDetail() {
           <ArrowLeft color="#1B2D4F" size={24} />
         </TouchableOpacity>
         <Text style={styles.navTitle}>Memory</Text>
-        <TouchableOpacity style={styles.backBtn}>
+        <TouchableOpacity style={styles.backBtn} onPress={handleDelete}>
           <Trash2 color="#8A7E6E" size={20} />
         </TouchableOpacity>
       </View>
@@ -72,7 +81,7 @@ export default function ReflectionDetail() {
               </View>
             )}
 
-            {record.userResponse && (
+            {record.userResponse !== undefined && (
               <View style={styles.block}>
                 <Text style={styles.blockLabel}>YOUR REFLECTION</Text>
                 <Text style={styles.responseText}>"{record.userResponse}"</Text>
