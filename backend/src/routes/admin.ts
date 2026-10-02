@@ -1,42 +1,15 @@
 import { Hono } from 'hono';
 import { Bindings } from '../types/env';
-import { verifyFirebaseToken } from '../utils/auth';
+import { KnowledgeChunk, TEACHING_CORPUS } from '../lib/chunkKnowledge';
+import { embedKnowledgeChunks } from '../lib/retrieval';
+import { assertAdmin } from '../utils/auth';
 
 const admin = new Hono<{ Bindings: Bindings, Variables: { user: any } }>();
 
 // Auth middleware for all admin routes
 admin.use('*', async (c, next) => {
-  const authHeader = c.req.header('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return c.json({ error: 'Unauthorized', message: 'Missing or invalid Authorization header' }, 401);
-  }
-
-  const token = authHeader.split('Bearer ')[1];
-  let payload;
-  try {
-    payload = await verifyFirebaseToken(token, c.env.FIREBASE_PROJECT_ID);
-  } catch (err: any) {
-    return c.json({ error: 'Unauthorized', message: err.message }, 401);
-  }
-
-  if (!payload || !payload.sub) {
-    return c.json({ error: 'Invalid or expired token', message: 'Token payload missing sub claim' }, 401);
-  }
-
-  // Check if user has ADMIN role in D1 database
-  try {
-    const { results } = await c.env.DB.prepare('SELECT role FROM User WHERE firebaseUid = ?')
-      .bind(payload.sub)
-      .all();
-
-    if (results.length === 0 || results[0].role !== 'ADMIN') {
-      return c.json({ error: 'Forbidden', message: 'Forbidden: Admins only' }, 403);
-    }
-  } catch (dbErr: any) {
-    return c.json({ error: 'Database Error', message: dbErr.message }, 500);
-  }
-
-  c.set('user', payload);
+  const denied = await assertAdmin(c);
+  if (denied) return denied;
   await next();
 });
 
@@ -73,44 +46,39 @@ admin.put('/users/:id/role', async (c) => {
 });
 
 // POST /api/admin/ingest
-// Receives an array of chunks (strings) and ingests them into Vectorize
+// Accepts prepared teaching chunks, or plain strings for compatibility.
 admin.post('/ingest', async (c) => {
-  const { chunks, clearIndex = true } = await c.req.json();
+  const { chunks } = await c.req.json();
 
   if (!chunks || !Array.isArray(chunks) || chunks.length === 0) {
     return c.json({ error: 'Missing or empty chunks array' }, 400);
   }
 
-  // Unfortunately, Vectorize doesn't have an easy "clear all" via the API in one call without deleting the index.
-  // But we can just insert over it. If we want to ensure clean state, doing it via wrangler is best, 
-  // but here we just insert the chunks.
-  
-  let inserted = 0;
-  
-  // Cloudflare AI run accepts an array of texts for embedding
-  // But there are limits to how many can be embedded at once. We'll process in batches of 20.
-  const BATCH_SIZE = 20;
-  
-  for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-    const batchTexts = chunks.slice(i, i + BATCH_SIZE);
-    
-    // Generate embeddings
-    const aiResponse = await c.env.AI.run('@cf/baai/bge-m3', { text: batchTexts });
-    const embeddings = aiResponse.data; // Array of arrays of numbers
-    
-    // Prepare Vectorize vectors
-    const vectors = batchTexts.map((text, idx) => ({
-      id: `rag_chunk_${Date.now()}_${i + idx}`,
-      values: embeddings[idx],
-      metadata: { content: text }
-    }));
-    
-    // Insert into Vectorize
-    const vecRes = await c.env.VECTORIZE.insert(vectors);
-    inserted += vecRes.count || vectors.length;
-  }
+  const prepared: KnowledgeChunk[] = chunks.map((chunk: unknown, index: number) => {
+    if (typeof chunk === 'string') {
+      return {
+        id: `rag_chunk_${Date.now()}_${index}`,
+        text: chunk,
+        principle: '',
+        topics: '',
+        section: 'explanation',
+        claim: 'philosophical_interpretation',
+      };
+    }
+    const item = chunk as Partial<KnowledgeChunk>;
+    if (!item.text) throw new Error('Chunk missing text');
+    return {
+      id: item.id || `${TEACHING_CORPUS}-${index}`,
+      text: item.text,
+      principle: item.principle || '',
+      topics: item.topics || '',
+      section: item.section || 'explanation',
+      claim: item.claim || 'philosophical_interpretation',
+    };
+  });
 
-  return c.json({ success: true, message: `Successfully embedded and inserted ${inserted} chunks into atmik-index-v2.` });
+  const inserted = await embedKnowledgeChunks(c.env, prepared);
+  return c.json({ success: true, message: `Embedded and inserted ${inserted} chunks.`, inserted });
 });
 
 // POST /api/admin/notify
