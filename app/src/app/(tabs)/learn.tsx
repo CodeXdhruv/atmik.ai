@@ -21,6 +21,37 @@ import { useAppStore } from '../../store/useAppStore';
 
 const { width } = Dimensions.get('window');
 
+function uniqueThemes(categories: any[]) {
+  const seen = new Set<string>();
+  const themes: { id: string; label: string; icon: React.ElementType }[] = [];
+  for (const cat of categories || []) {
+    const label = String(cat?.name || '').trim();
+    const key = label.toLowerCase();
+    if (!label || seen.has(key)) continue;
+    seen.add(key);
+    themes.push({
+      id: String(cat.id || key),
+      label,
+      icon: getCategoryIcon(cat.icon, label),
+    });
+  }
+  return themes;
+}
+
+function captionText(description: string | null | undefined, fallback: string) {
+  const plain = (description || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+  return plain || fallback;
+}
+
 const DEFAULT_CATEGORIES = [
   { id: 'all', label: 'All', icon: LayoutGrid },
   { id: 'book', label: 'Books', icon: Book },
@@ -88,12 +119,7 @@ export default function LearnScreen() {
       }
 
       if (cachedCategories && cachedCategories.length > 0) {
-        const dynamicThemes = cachedCategories.map((cat: any) => ({
-          id: cat.id || cat.name.toLowerCase(),
-          label: cat.name,
-          icon: getCategoryIcon(cat.icon, cat.name)
-        }));
-        setThemes(dynamicThemes);
+        setThemes(uniqueThemes(cachedCategories));
       }
     }
     loadCachedData();
@@ -108,14 +134,7 @@ export default function LearnScreen() {
       
       setLibraryContent(contentData);
 
-      // Map backend categories to our UI format for themes
-      const dynamicThemes = categoryData.map((cat: any) => ({
-        id: cat.id || cat.name.toLowerCase(),
-        label: cat.name,
-        icon: getCategoryIcon(cat.icon, cat.name)
-      }));
-
-      setThemes(dynamicThemes);
+      setThemes(uniqueThemes(categoryData));
     } catch (err) {
       console.error('Error fetching library data:', err);
     } finally {
@@ -284,7 +303,7 @@ export default function LearnScreen() {
                         
                         <View style={styles.featuredMainContent}>
                           <Text style={styles.featuredTitle} numberOfLines={2}>{item.title}</Text>
-                          <Text style={styles.featuredDesc} numberOfLines={2}>{item.description || `Explore this ${item.type?.toLowerCase() || 'content'} in our library.`}</Text>
+                          <Text style={styles.featuredDesc} numberOfLines={2}>{captionText(item.description, `Explore this ${item.type?.toLowerCase() || 'content'} in our library.`)}</Text>
                           
                           <View style={styles.featuredBottomRow}>
                             <View style={styles.exploreButton}>
@@ -342,12 +361,13 @@ export default function LearnScreen() {
             </View>
 
             
-            <View style={{ height: 280, width: '100%' }}>
+            <View style={styles.curatedRail}>
               <FlashList
                 data={curatedItems}
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.curatedScroll}
+                ItemSeparatorComponent={() => <View style={styles.curatedGap} />}
                 // @ts-ignore - TS definitions for FlashList sometimes miss estimatedItemSize depending on node_modules state
                 estimatedItemSize={176}
                 keyExtractor={(item: any, index: number) => item.id || index.toString()}
@@ -410,7 +430,7 @@ export default function LearnScreen() {
                     </ImageBackground>
                     <View style={styles.curatedContent}>
                       <Text style={styles.curatedItemTitle} numberOfLines={1}>{item.title}</Text>
-                      <Text style={styles.curatedItemSubtitle} numberOfLines={2}>{item.description || `Explore this ${item.type?.toLowerCase() || 'item'}.`}</Text>
+                      <Text style={styles.curatedItemSubtitle} numberOfLines={2}>{captionText(item.description, `Explore this ${item.type?.toLowerCase() || 'item'}.`)}</Text>
                     </View>
                   </TouchableOpacity>
                 )}
@@ -428,6 +448,7 @@ export default function LearnScreen() {
           </TouchableOpacity>
         </View>
 
+        <View style={styles.themeRail}>
         <ScrollView 
           horizontal 
           showsHorizontalScrollIndicator={false} 
@@ -448,6 +469,7 @@ export default function LearnScreen() {
             );
           })}
         </ScrollView>
+        </View>
 
         {/* Dynamic Theme Content Display */}
         {activeTheme && (
@@ -465,6 +487,7 @@ export default function LearnScreen() {
             </View>
             
             {activeThemeItems.length > 0 ? (
+              <View style={styles.curatedRail}>
               <ScrollView 
                 horizontal 
                 showsHorizontalScrollIndicator={false} 
@@ -557,11 +580,12 @@ export default function LearnScreen() {
                     )}
                     <View style={styles.curatedContent}>
                       <Text style={styles.curatedItemTitle} numberOfLines={1}>{item.title}</Text>
-                      <Text style={styles.curatedItemSubtitle} numberOfLines={2}>{item.description || `Explore this ${item.type?.toLowerCase() || 'item'}.`}</Text>
+                      <Text style={styles.curatedItemSubtitle} numberOfLines={2}>{captionText(item.description, `Explore this ${item.type?.toLowerCase() || 'item'}.`)}</Text>
                     </View>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
+              </View>
             ) : (
               <View style={styles.emptyThemeContainer}>
                 <Text style={styles.emptyThemeText}>
@@ -772,13 +796,19 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#DEAB5B',
   },
+  curatedRail: {
+    marginHorizontal: Spacing.lg,
+    overflow: 'hidden',
+    height: 280,
+  },
   curatedScroll: {
-    paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.xl,
+  },
+  curatedGap: {
+    width: Spacing.md,
   },
   curatedCard: {
     width: 160,
-    marginRight: Spacing.md,
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: 8,
@@ -857,9 +887,13 @@ const styles = StyleSheet.create({
     color: '#718096',
     lineHeight: 16,
   },
+  themeRail: {
+    marginHorizontal: Spacing.lg,
+    overflow: 'hidden',
+  },
   themeScroll: {
-    paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.xl,
+    gap: Spacing.sm,
   },
   themeChip: {
     flexDirection: 'row',
@@ -868,7 +902,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 12,
-    marginRight: Spacing.sm,
     ...Shadows.light,
   },
   themeChipText: {
