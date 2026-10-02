@@ -1,5 +1,27 @@
 import auth from '@react-native-firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createMMKV } from 'react-native-mmkv';
+
+const cacheStore = createMMKV({ id: 'library-cache' });
+
+async function readCache(key: string): Promise<string | null> {
+  const stored = cacheStore.getString(key);
+  if (stored) return stored;
+  try {
+    const legacy = await AsyncStorage.getItem(key);
+    if (legacy) {
+      cacheStore.set(key, legacy);
+      return legacy;
+    }
+  } catch {
+    // Keep going with an empty cache.
+  }
+  return null;
+}
+
+function writeCache(key: string, value: string) {
+  cacheStore.set(key, value);
+}
 
 const API_BASE_URL = 'https://atmik-ai-backend.swatantra-backend.workers.dev';
 const CACHE_KEY_CONTENT = '@atmik_cache_library_content';
@@ -12,19 +34,18 @@ let memoryCategoryCache: any[] | null = null;
 let memoryJourneyCache: any | null = null;
 
 const getAuthHeaders = async () => {
-  let token = 'temp-user-token';
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
   try {
     const currentUser = auth().currentUser;
     if (currentUser) {
-      token = await currentUser.getIdToken(false);
+      headers.Authorization = `Bearer ${await currentUser.getIdToken(false)}`;
     }
   } catch (err) {
-    console.warn("Could not get Firebase token, using fallback token:", err);
+    console.warn('Could not get Firebase token:', err);
   }
-  return {
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  };
+  return headers;
 };
 
 export const apiService = {
@@ -36,7 +57,7 @@ export const apiService = {
       return memoryContentCache;
     }
     try {
-      const stored = await AsyncStorage.getItem(CACHE_KEY_CONTENT);
+      const stored = await readCache(CACHE_KEY_CONTENT);
       if (stored) {
         memoryContentCache = JSON.parse(stored);
         return memoryContentCache || [];
@@ -53,7 +74,7 @@ export const apiService = {
       return memoryCategoryCache;
     }
     try {
-      const stored = await AsyncStorage.getItem(CACHE_KEY_CATEGORIES);
+      const stored = await readCache(CACHE_KEY_CATEGORIES);
       if (stored) {
         memoryCategoryCache = JSON.parse(stored);
         return memoryCategoryCache || [];
@@ -80,7 +101,7 @@ export const apiService = {
       
       // Update memory & persistent cache
       memoryContentCache = content;
-      AsyncStorage.setItem(CACHE_KEY_CONTENT, JSON.stringify(content)).catch(() => {});
+      writeCache(CACHE_KEY_CONTENT, JSON.stringify(content));
 
       return content;
     } catch (error) {
@@ -104,7 +125,7 @@ export const apiService = {
 
       // Update memory & persistent cache
       memoryCategoryCache = categories;
-      AsyncStorage.setItem(CACHE_KEY_CATEGORIES, JSON.stringify(categories)).catch(() => {});
+      writeCache(CACHE_KEY_CATEGORIES, JSON.stringify(categories));
 
       return categories;
     } catch (error) {
@@ -139,7 +160,7 @@ export const apiService = {
       return memoryJourneyCache;
     }
     try {
-      const stored = await AsyncStorage.getItem(CACHE_KEY_JOURNEY);
+      const stored = await readCache(CACHE_KEY_JOURNEY);
       if (stored) {
         memoryJourneyCache = JSON.parse(stored);
         return memoryJourneyCache;
@@ -165,7 +186,7 @@ export const apiService = {
       const resData = await response.json();
       if (resData.success && resData.data) {
         memoryJourneyCache = resData.data;
-        AsyncStorage.setItem(CACHE_KEY_JOURNEY, JSON.stringify(resData.data)).catch(() => {});
+        writeCache(CACHE_KEY_JOURNEY, JSON.stringify(resData.data));
         return resData.data;
       }
       return await this.getCachedTodaysJourney();
@@ -236,4 +257,67 @@ export const apiService = {
       return null;
     }
   },
+
+  /**
+   * Toggle a bookmark for a specific content ID
+   */
+  async deleteAccount(): Promise<boolean> {
+    try {
+      const headers = await getAuthHeaders();
+      if (!headers.Authorization) return false;
+      const res = await fetch(`${API_BASE_URL}/api/auth/delete-account`, {
+        method: 'POST',
+        headers,
+      });
+      return res.ok;
+    } catch (e) {
+      console.error('Error deleting account data:', e);
+      return false;
+    }
+  },
+
+  async toggleBookmark(contentId: string): Promise<boolean> {
+    try {
+      const headers = await getAuthHeaders();
+      const currentUser = auth().currentUser;
+      if (!currentUser || !headers.Authorization) return false;
+      const userId = currentUser.uid;
+
+      const res = await fetch(`${API_BASE_URL}/api/bookmarks/toggle`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ userId, contentId })
+      });
+
+      if (!res.ok) throw new Error('Failed to toggle bookmark');
+      const data = await res.json();
+      return data.success;
+    } catch (e) {
+      console.error('Error toggling bookmark:', e);
+      return false;
+    }
+  },
+
+  /**
+   * Get all bookmarks for the current user
+   */
+  async getBookmarks(): Promise<any[]> {
+    try {
+      const headers = await getAuthHeaders();
+      const currentUser = auth().currentUser;
+      if (!currentUser || !headers.Authorization) return [];
+      const userId = currentUser.uid;
+
+      const res = await fetch(`${API_BASE_URL}/api/bookmarks/${userId}`, {
+        headers
+      });
+
+      if (!res.ok) throw new Error('Failed to fetch bookmarks');
+      const data = await res.json();
+      return data.bookmarks || [];
+    } catch (e) {
+      console.error('Error fetching bookmarks:', e);
+      return [];
+    }
+  }
 };
