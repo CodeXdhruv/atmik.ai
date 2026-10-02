@@ -17,6 +17,7 @@ import { Colors, Spacing, Radius, Shadows } from '@/constants/theme';
 import { apiService } from '../../services/api';
 import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
+import { useAppStore } from '../../store/useAppStore';
 
 const { width } = Dimensions.get('window');
 
@@ -71,6 +72,7 @@ export default function LearnScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const featuredScrollRef = React.useRef<ScrollView>(null);
   const [activeFeaturedIndex, setActiveFeaturedIndex] = useState(0);
+  const bookmarks = useAppStore(state => state.bookmarks);
 
   // Load cached items instantly on component mount (0 ms latency)
   React.useEffect(() => {
@@ -164,6 +166,14 @@ export default function LearnScreen() {
         <View style={styles.headerBackground}>
           <Text style={styles.headerTitle}>Library</Text>
           <Text style={styles.headerSubtitle}>Knowledge for a calmer, wiser you.</Text>
+          
+          <TouchableOpacity 
+            style={{ position: 'absolute', right: Spacing.lg, top: Spacing.xl }} 
+            onPress={() => router.push('/bookmarks')}
+            hitSlop={{top: 15, bottom: 15, left: 15, right: 15}}
+          >
+            <Bookmark color="#1B2D4F" size={24} />
+          </TouchableOpacity>
         </View>
 
         {/* Categories Horizontal Scroll */}
@@ -255,6 +265,21 @@ export default function LearnScreen() {
                       <View style={styles.featuredOverlay}>
                         <View style={styles.featuredTopRow}>
                           <Text style={styles.featuredTag}>FEATURED</Text>
+                          <TouchableOpacity 
+                            onPress={() => {
+                              useAppStore.getState().toggleBookmarkLocal(item.id);
+                              apiService.toggleBookmark(item.id);
+                            }}
+                            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                            style={styles.bookmarkButton}
+                          >
+                            <Bookmark
+                              color={bookmarks.includes(item.id) ? Colors.primary : "#0A2540"}
+                              fill={bookmarks.includes(item.id) ? Colors.primary : 'transparent'}
+                              size={16}
+                              strokeWidth={1.5}
+                            />
+                          </TouchableOpacity>
                         </View>
                         
                         <View style={styles.featuredMainContent}>
@@ -360,6 +385,21 @@ export default function LearnScreen() {
                       <View style={styles.curatedImage}>
                         <View style={styles.curatedCardTop}>
                           <Text style={styles.curatedTag}>{item.type?.toUpperCase() || 'CONTENT'}</Text>
+                          <TouchableOpacity 
+                            onPress={() => {
+                              useAppStore.getState().toggleBookmarkLocal(item.id);
+                              apiService.toggleBookmark(item.id);
+                            }}
+                            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                            style={{ backgroundColor: 'rgba(255,255,255,0.8)', padding: 4, borderRadius: 12 }}
+                          >
+                            <Bookmark
+                              color={bookmarks.includes(item.id) ? Colors.primary : "#0A2540"}
+                              fill={bookmarks.includes(item.id) ? Colors.primary : 'transparent'}
+                              size={14}
+                              strokeWidth={1.5}
+                            />
+                          </TouchableOpacity>
                         </View>
                         {(!item.coverUrl && item.type !== 'QUOTE') && (
                           <View style={styles.curatedImageTextContainer}>
@@ -461,6 +501,20 @@ export default function LearnScreen() {
                        <View style={[styles.curatedImageContainer, { backgroundColor: '#F8FAFC', borderRadius: 12, padding: 16 }]}>
                          <View style={styles.curatedCardTop}>
                            <Text style={styles.curatedTag}>QUOTE</Text>
+                           <TouchableOpacity 
+                             onPress={() => {
+                               useAppStore.getState().toggleBookmarkLocal(item.id);
+                               apiService.toggleBookmark(item.id);
+                             }}
+                             hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                           >
+                             <Bookmark
+                               color={bookmarks.includes(item.id) ? Colors.primary : Colors.textSecondary}
+                               fill={bookmarks.includes(item.id) ? Colors.primary : 'transparent'}
+                               size={16}
+                               strokeWidth={1.5}
+                             />
+                           </TouchableOpacity>
                          </View>
                          <View style={styles.quoteCardContent}>
                            <QuoteIcon color="#DEAB5B" size={24} fill="#DEAB5B" style={{ alignSelf: 'center', marginBottom: 12 }} />
@@ -477,6 +531,21 @@ export default function LearnScreen() {
                         >
                           <View style={styles.curatedCardTop}>
                             <Text style={styles.curatedTag}>{item.type || 'CONTENT'}</Text>
+                            <TouchableOpacity 
+                              onPress={() => {
+                                useAppStore.getState().toggleBookmarkLocal(item.id);
+                                apiService.toggleBookmark(item.id);
+                              }}
+                              hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                              style={{ backgroundColor: 'rgba(255,255,255,0.8)', padding: 4, borderRadius: 12 }}
+                            >
+                              <Bookmark
+                                color={bookmarks.includes(item.id) ? Colors.primary : "#0A2540"}
+                                fill={bookmarks.includes(item.id) ? Colors.primary : 'transparent'}
+                                size={14}
+                                strokeWidth={1.5}
+                              />
+                            </TouchableOpacity>
                           </View>
                           {item.type === 'BOOK' && (
                             <View style={styles.curatedImageTextContainer}>
