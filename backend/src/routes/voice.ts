@@ -3,310 +3,378 @@ import { upgradeWebSocket } from 'hono/cloudflare-workers';
 import { Bindings } from '../types/env';
 import { retrieveContext } from '../lib/retrieval';
 import { getSystemPrompt } from '../lib/prompts';
-import { synthesize } from '../lib/tts';
+import { synthesizeBytes, warmVoice } from '../lib/tts';
 import { updateConversationContext } from '../lib/memory';
+import { shapeConversationalReply, shouldRetrieveKnowledge, wantsDeeperReply } from '../lib/speechText';
+import { verifyFirebaseToken } from '../utils/auth';
+import { allowRequest } from '../lib/rateLimit';
+import { withTimeout } from '../lib/timeout';
 
 const voice = new Hono<{ Bindings: Bindings }>();
 
-// Maximum audio size: 2MB (after base64 decoding)
 const MAX_AUDIO_BYTES = 2 * 1024 * 1024;
 
-/**
- * Transcribe audio using Cloudflare AI REST API directly.
- * Bypasses the buggy c.env.AI.run() binding which mangles large byte arrays
- * during internal JSON serialization.
- */
-async function transcribeAudio(ai: any, audioBytes: Uint8Array, lang: string = 'hi'): Promise<string> {
-  console.log(`🎙️ [Backend] Transcribing audio chunk size: ${audioBytes.byteLength} bytes (lang: ${lang})`);
-  
-  if (audioBytes.byteLength < 1000) {
-    console.warn(`🎙️ [Backend] Audio payload too short (${audioBytes.byteLength} bytes).`);
-    return "";
+async function readAiPayload(result: any): Promise<any> {
+  if (result && typeof result.json === 'function') {
+    return result.json();
   }
-
-  // Convert full Uint8Array to Array safely without stack overflow, preserving full audio container
-  const fullAudioArray = Array.from(audioBytes);
-
-  const targetLang = (lang || 'hi').toLowerCase();
-  const whisperPrompt = targetLang === 'hi' ? 'यह हिंदी भाषा में बातचीत है।' : undefined;
-
-  // Strategy 1: @cf/openai/whisper-large-v3-turbo
-  try {
-    console.log(`🎙️ [Backend] Calling whisper-large-v3-turbo with full audio (${fullAudioArray.length} items), language: ${targetLang}`);
-    const payload: any = {
-      audio: fullAudioArray,
-      language: targetLang
-    };
-    if (whisperPrompt) payload.prompt = whisperPrompt;
-
-    const response: any = await ai.run('@cf/openai/whisper-large-v3-turbo', payload);
-    console.log(`🎙️ [Backend] Raw Whisper AI response:`, JSON.stringify(response));
-    const text = response?.text?.trim();
-    if (text && text.length > 0) {
-      console.log(`🎙️ [Backend] Whisper STT Transcribed: "${text}"`);
-      return text;
+  if (result && typeof result.text === 'function') {
+    const text = await result.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { text };
     }
-  } catch (err: any) {
-    console.error(`🎙️ [Backend] Whisper v3 error:`, err?.message || err);
   }
-
-  // Strategy 2: @cf/openai/whisper (v1 model)
-  try {
-    console.log(`🎙️ [Backend] Calling @cf/openai/whisper with full audio (${fullAudioArray.length} items), language: ${targetLang}`);
-    const payload: any = {
-      audio: fullAudioArray,
-      language: targetLang
-    };
-    if (whisperPrompt) payload.prompt = whisperPrompt;
-
-    const response: any = await ai.run('@cf/openai/whisper', payload);
-    console.log(`🎙️ [Backend] Raw Whisper v1 response:`, JSON.stringify(response));
-    const text = response?.text?.trim();
-    if (text && text.length > 0) {
-      console.log(`🎙️ [Backend] Whisper STT Transcribed (v1): "${text}"`);
-      return text;
-    }
-  } catch (err: any) {
-    console.error(`🎙️ [Backend] Whisper v1 error:`, err?.message || err);
-  }
-
-  return "";
+  return result;
 }
 
-// GET /api/voice-chat
-// WebSocket endpoint for real-time voice streaming
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const size = 0x8000;
+  for (let i = 0; i < bytes.length; i += size) {
+    binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + size, bytes.length)));
+  }
+  return btoa(binary);
+}
+
+async function transcribeAudio(ai: any, audioBytes: Uint8Array, lang: string): Promise<string> {
+  if (audioBytes.byteLength < 1000) {
+    console.warn(`🎙️ [Backend] Audio payload too short (${audioBytes.byteLength} bytes).`);
+    return '';
+  }
+
+  const targetLang = (lang || 'hi').toLowerCase().startsWith('en') ? 'en' : 'hi';
+  const contentType = audioBytes.length > 2 && audioBytes[0] === 0xff && (audioBytes[1] & 0xf0) === 0xf0
+    ? 'audio/aac'
+    : 'audio/mp4';
+  console.log(`🎙️ [Backend] Transcribing ${audioBytes.byteLength} bytes as ${contentType}, lang=${targetLang}`);
+
+  const transcriptOf = (payload: any) => (
+    payload?.text || payload?.results?.channels?.[0]?.alternatives?.[0]?.transcript || payload?.result?.text || ''
+  ).trim();
+
+  try {
+    const fast = await withTimeout(ai.run('@cf/deepgram/nova-3', {
+      audio: {
+        body: audioBytes.buffer.slice(audioBytes.byteOffset, audioBytes.byteOffset + audioBytes.byteLength),
+        contentType,
+      },
+      language: targetLang,
+      punctuate: true,
+      smart_format: true,
+    }), 6_000, 'Transcription');
+    const fastText = transcriptOf(await readAiPayload(fast));
+    if (fastText) {
+      console.log(`🎙️ [Backend] Transcript: "${fastText}"`);
+      return fastText;
+    }
+    console.warn('🎙️ [Backend] Fast transcription returned no text, using Whisper');
+  } catch (err) {
+    console.warn('🎙️ [Backend] Fast transcription unavailable, using Whisper', err);
+  }
+
+  const response = await withTimeout(ai.run('@cf/openai/whisper-large-v3-turbo', {
+    audio: bytesToBase64(audioBytes),
+    language: targetLang,
+  }), 18_000, 'Transcription');
+
+  const text = transcriptOf(await readAiPayload(response));
+  console.log(`🎙️ [Backend] Transcript: "${text}"`);
+  return text;
+}
+
+function messageText(data: unknown): string | null {
+  if (typeof data === 'string') return data;
+  if (data instanceof ArrayBuffer) {
+    const bytes = new Uint8Array(data);
+    // Control messages are JSON. Some mobile sockets deliver that text as bytes.
+    if (bytes.length > 0 && bytes[0] === 0x7b) {
+      return new TextDecoder().decode(bytes);
+    }
+  }
+  return null;
+}
+
+function concatBytes(chunks: Uint8Array[]): Uint8Array {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
+}
+
 voice.get('/', upgradeWebSocket((c) => {
-  // Per-connection session state
   let sessionUserId = '';
   let sessionLang = 'hi';
+  let voiceWarmed = false;
+  let sessionAuthed = false;
+  let utteranceOpen = false;
+  let audioChunks: Uint8Array[] = [];
+  let audioSize = 0;
+
+  const acceptToken = async (token: string) => {
+    const payload = await verifyFirebaseToken(token, c.env.FIREBASE_PROJECT_ID);
+    if (!payload?.sub) return false;
+    sessionUserId = String(payload.sub);
+    sessionAuthed = true;
+    return true;
+  };
+
+  let authReady: Promise<unknown> = (async () => {
+    const token = c.req.query('token') || '';
+    if (!token) return;
+    try {
+      await acceptToken(token);
+    } catch (err: any) {
+      console.error('Voice token verification failed:', err?.message || err);
+    }
+  })();
+
+  const acceptSession = async (data: any, ws: any) => {
+    sessionLang = data.lang || sessionLang || 'hi';
+    const token = typeof data.token === 'string' ? data.token : '';
+    if (!token) {
+      if (!sessionAuthed) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Sign in to use voice.' }));
+      }
+      return;
+    }
+    try {
+      const ok = await acceptToken(token);
+      if (!ok) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Sign in to use voice.' }));
+      }
+    } catch (err: any) {
+      console.error('Voice token verification failed:', err?.message || err);
+      sessionAuthed = false;
+      ws.send(JSON.stringify({ type: 'error', message: 'Sign in to use voice.' }));
+    }
+  };
+
+  const warmCurrentVoice = () => {
+    if (voiceWarmed) return;
+    voiceWarmed = true;
+    c.executionCtx.waitUntil(warmVoice(c.env, sessionLang));
+  };
+
+  const resetUtterance = () => {
+    utteranceOpen = true;
+    audioChunks = [];
+    audioSize = 0;
+  };
+
+  const appendAudio = (bytes: Uint8Array, ws: any) => {
+    if (audioSize + bytes.byteLength > MAX_AUDIO_BYTES) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Audio too large. Keep recordings under 20 seconds.' }));
+      return false;
+    }
+    audioChunks.push(bytes);
+    audioSize += bytes.byteLength;
+    return true;
+  };
+
+  const finishUtterance = async (ws: any) => {
+    utteranceOpen = false;
+    const bytes = concatBytes(audioChunks);
+    audioChunks = [];
+    audioSize = 0;
+    if (!sessionAuthed) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Sign in to use voice.' }));
+      return;
+    }
+    if (!allowRequest(`voice:${sessionUserId}`, 12, 60_000)) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Too many voice messages. Wait a moment and try again.' }));
+      return;
+    }
+    try {
+      const transcribedText = await transcribeAudio(c.env.AI, bytes, sessionLang);
+      if (!transcribedText) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Could not transcribe audio. Please try again.' }));
+        return;
+      }
+      ws.send(JSON.stringify({ type: 'transcription', text: transcribedText }));
+      await processTranscription(c, ws, sessionUserId, sessionLang, transcribedText);
+    } catch (aiErr: any) {
+      console.error('🎙️ [Backend] Transcription error:', aiErr);
+      ws.send(JSON.stringify({ type: 'error', message: 'Transcription failed. Please try again.' }));
+    }
+  };
 
   return {
     onMessage: async (event, ws) => {
       try {
-        // Handle binary WebSocket frames (raw audio bytes)
-        if (event.data instanceof ArrayBuffer) {
-          console.log(`🎙️ [Backend] Received binary audio frame: ${event.data.byteLength} bytes`);
-          
-          if (event.data.byteLength > MAX_AUDIO_BYTES) {
-            ws.send(JSON.stringify({ type: 'error', message: 'Audio too large. Keep recordings under 20 seconds.' }));
-            return;
-          }
+        const text = messageText(event.data);
 
-          const audioBytes = new Uint8Array(event.data);
-          
-          try {
-            // 1. STT: Transcribe audio using Whisper
-            console.log('🎙️ [Backend] Sending audio to Whisper (STT)...');
-            const transcribedText = await transcribeAudio(c.env.AI, audioBytes, sessionLang);
-            console.log(`🎙️ [Backend] Transcription Result: "${transcribedText}"`);
-
-            if (!transcribedText || transcribedText.trim().length === 0) {
-              ws.send(JSON.stringify({ type: 'error', message: 'Could not transcribe audio. Please try again.' }));
-              return;
-            }
-
-            // Send transcription back to UI for display
-            ws.send(JSON.stringify({ type: 'transcription', text: transcribedText }));
-
-            // Continue with LLM + TTS pipeline
-            await processTranscription(c, ws, sessionUserId, sessionLang, transcribedText);
-          } catch (aiErr: any) {
-            console.error('🎙️ [Backend] AI transcription error:', aiErr);
-            ws.send(JSON.stringify({ type: 'error', message: `Transcription failed: ${aiErr.message}` }));
-          }
+        if (!text && event.data instanceof ArrayBuffer) {
+          const bytes = new Uint8Array(event.data);
+          if (!utteranceOpen) resetUtterance();
+          if (!appendAudio(bytes, ws)) return;
           return;
         }
 
-        // Handle JSON text messages
-        const data = JSON.parse(event.data as string);
-        
-        // Ignore ping messages (keep-alive)
+        if (!text) return;
+        const data = JSON.parse(text);
         if (data.type === 'ping') return;
-        
-        // Session init message — client sends metadata before binary audio
-        if (data.type === 'session_init') {
-          sessionUserId = data.userId || '';
-          sessionLang = data.lang || 'hi';
-          console.log(`🎙️ [Backend] Session initialized: user=${sessionUserId}, lang=${sessionLang}`);
-          
-          // Pre-warm Render Hindi TTS endpoint in background if Hindi selected
-          if (sessionLang === 'hi' && c.env.TTS_ENDPOINT) {
-            c.executionCtx.waitUntil(fetch(`${c.env.TTS_ENDPOINT}/health`).catch(() => {}));
-          }
 
-          ws.send(JSON.stringify({ type: 'session_ready' }));
+        if (data.type === 'session_init') {
+          if (!sessionAuthed) {
+            authReady = acceptSession(data, ws);
+            await authReady;
+          } else if (data.lang) {
+            sessionLang = data.lang;
+          }
+          console.log(`🎙️ [Backend] Session ready: user=${sessionUserId}, lang=${sessionLang}`);
+          if (sessionAuthed) {
+            warmCurrentVoice();
+            ws.send(JSON.stringify({ type: 'session_ready' }));
+          }
           return;
         }
 
-        // Legacy: JSON+base64 audio (fallback for compatibility)
-        if (data.type === 'audio_chunk' && data.audioBase64) {
-          const { userId, lang = 'hi' } = data;
-          sessionUserId = userId;
-          sessionLang = lang;
-          console.log(`🎙️ [Backend] Received base64 audio chunk from user: ${userId}, lang: ${lang}`);
-          
-          // Decode Base64 audio to Uint8Array
-          const binaryString = atob(data.audioBase64);
-          
-          if (binaryString.length > MAX_AUDIO_BYTES) {
-            ws.send(JSON.stringify({ type: 'error', message: 'Audio too large. Keep recordings under 20 seconds.' }));
-            return;
+        if (data.type === 'utterance_start' || data.type === 'audio_begin') {
+          if (data.lang) sessionLang = data.lang;
+          if (!sessionAuthed) {
+            authReady = acceptSession(data, ws);
+            await authReady;
           }
-          
+          if (!sessionAuthed) return;
+          if (!utteranceOpen || audioSize === 0) resetUtterance();
+          return;
+        }
+
+        if (data.type === 'utterance_end') {
+          if (data.lang) sessionLang = data.lang;
+          await authReady;
+          await finishUtterance(ws);
+          return;
+        }
+
+        if (data.type === 'audio_chunk' && data.audioBase64) {
+          if (!sessionAuthed) {
+            authReady = acceptSession(data, ws);
+            await authReady;
+          }
+          if (!sessionAuthed) return;
+          if (data.lang) sessionLang = data.lang;
+          const binaryString = atob(data.audioBase64);
           const bytes = new Uint8Array(binaryString.length);
           for (let i = 0; i < binaryString.length; i++) {
             bytes[i] = binaryString.charCodeAt(i);
           }
-
-          try {
-            // 1. STT: Transcribe audio using Whisper
-            console.log('🎙️ [Backend] Sending audio to Whisper (STT)...');
-            const transcribedText = await transcribeAudio(c.env.AI, bytes, sessionLang);
-            console.log(`🎙️ [Backend] Transcription Result: "${transcribedText}"`);
-
-            if (!transcribedText || transcribedText.trim().length === 0) {
-              ws.send(JSON.stringify({ type: 'error', message: 'Could not transcribe audio. Please try again.' }));
-              return;
-            }
-
-            // Send transcription back to UI for display
-            ws.send(JSON.stringify({ type: 'transcription', text: transcribedText }));
-
-            // Continue with LLM + TTS pipeline
-            await processTranscription(c, ws, userId, lang, transcribedText);
-          } catch (aiErr: any) {
-            console.error('🎙️ [Backend] AI transcription error:', aiErr);
-            ws.send(JSON.stringify({ type: 'error', message: `Transcription failed: ${aiErr.message}` }));
-          }
+          if (!utteranceOpen) resetUtterance();
+          if (!appendAudio(bytes, ws)) return;
+          await finishUtterance(ws);
         }
       } catch (e: any) {
-        console.error("WebSocket Error:", e);
-        ws.send(JSON.stringify({ type: 'error', message: e.message }));
+        console.error('WebSocket Error:', e);
+        ws.send(JSON.stringify({ type: 'error', message: 'Voice failed. Please try again.' }));
       }
     },
     onClose: () => {
       console.log('WebSocket closed');
-    }
-  }
+    },
+  };
 }));
 
-/**
- * Process a transcription through the LLM + TTS pipeline.
- * Extracted as a shared function for both binary and base64 audio paths.
- */
 async function processTranscription(c: any, ws: any, userId: string, lang: string, transcribedText: string) {
   const cleanUserId = (userId || 'default_user').trim();
-  // 2. Fetch Summary & Retrieve Context
-  const { results } = await c.env.DB.prepare('SELECT currentSummary FROM ChatSession WHERE userId = ?').bind(cleanUserId).all();
-  const currentSummary = (results[0] as any)?.currentSummary || "No previous context.";
-  
-  const context = await retrieveContext(c.env, transcribedText, lang);
-  const systemPrompt = getSystemPrompt(context, currentSummary, lang);
+  const summaryPromise = c.env.DB.prepare('SELECT currentSummary FROM ChatSession WHERE userId = ?')
+    .bind(cleanUserId)
+    .all();
+  const contextPromise = shouldRetrieveKnowledge(transcribedText)
+    ? retrieveContext(c.env, transcribedText, lang, 'voice').catch((err) => {
+        console.warn('Voice retrieval skipped', err);
+        return 'No relevant context found.';
+      })
+    : Promise.resolve('No relevant context found.');
 
-  // 3. Stream LLM (Llama 3.1)
+  const [{ results }, context] = await Promise.all([summaryPromise, contextPromise]);
+  const currentSummary = (results[0] as any)?.currentSummary || 'No previous context.';
+  const systemPrompt = getSystemPrompt(context, currentSummary, lang, 'voice', transcribedText);
+
   console.log('🎙️ [Backend] Requesting AI response (Llama 3.1)...');
-  const aiStream: any = await c.env.AI.run('@cf/meta/llama-3.1-8b-instruct-fp8', {
+  const aiStream: any = await withTimeout(c.env.AI.run('@cf/meta/llama-3.1-8b-instruct-fp8', {
     messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: transcribedText }
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: transcribedText },
     ],
-    stream: true
-  });
+    max_tokens: wantsDeeperReply(transcribedText) ? 220 : 160,
+    stream: true,
+  }), 20_000, 'Voice model');
 
-  let currentSentence = "";
-  let fullResponse = "";
-  let chunkIndex = 0;
-  let ttsPromises: Promise<void>[] = [];
+  let rawResponse = '';
+  let published = '';
   const decoder = new TextDecoder();
 
-  // 4. Sentence Buffering & TTS Streaming
+  const replyShape = wantsDeeperReply(transcribedText)
+    ? { maxSentences: 7, maxWords: 120 }
+    : { maxSentences: 4, maxWords: 70 };
+
+  const publishText = () => {
+    const clean = shapeConversationalReply(rawResponse, replyShape);
+    if (clean.length > published.length && clean.startsWith(published)) {
+      ws.send(JSON.stringify({ type: 'text_stream', text: clean.slice(published.length) }));
+      published = clean;
+    } else if (clean !== published) {
+      ws.send(JSON.stringify({ type: 'text_replace', text: clean }));
+      published = clean;
+    }
+    return clean;
+  };
+
+  const sendClip = (index: number, text: string, audio: Uint8Array | null) => {
+    if (audio) {
+      ws.send(JSON.stringify({
+        type: 'tts_audio',
+        index,
+        text,
+        audioBase64: bytesToBase64(audio),
+      }));
+      return;
+    }
+    ws.send(JSON.stringify({ type: 'tts_audio', index, skipped: true }));
+  };
+
   for await (const chunk of aiStream) {
     const decoded = decoder.decode(chunk as Uint8Array, { stream: true });
-    const lines = decoded.split('\n');
-    
-    for (const line of lines) {
-      if (line.startsWith('data: ') && !line.includes('[DONE]')) {
-        try {
-          const data = JSON.parse(line.substring(6));
-          if (data.response) {
-            const textChunk = data.response;
-            currentSentence += textChunk;
-            fullResponse += textChunk;
-
-            // Send live text to client
-            ws.send(JSON.stringify({ type: 'text_stream', text: textChunk }));
-
-            // Check for natural sentence boundaries (.?!। or newline) or complete 12-word clause
-            const wordCount = currentSentence.trim().split(/\s+/).length;
-            const isSentenceEnd = /[.?!।]\s/.test(currentSentence) || /[.?!।]$/.test(currentSentence) || /\n/.test(currentSentence);
-            
-            if (isSentenceEnd || wordCount >= 12) {
-              let sentenceToSpeak = currentSentence.trim();
-              currentSentence = ""; 
-
-              // Extract emotion tag if present in this sentence
-              let emotionTag = 'neutral';
-              const emotionMatch = sentenceToSpeak.match(/\[emotion:\s*(.*?)\]/i);
-              if (emotionMatch) {
-                emotionTag = emotionMatch[1];
-                sentenceToSpeak = sentenceToSpeak.replace(emotionMatch[0], '').trim();
-              }
-
-              if (sentenceToSpeak.length > 1) {
-                const currentIndex = chunkIndex++;
-                const currentSentenceToSpeak = sentenceToSpeak;
-                const currentEmotion = emotionTag;
-                
-                // Fire TTS asynchronously immediately instead of sequentially waiting
-                const ttsTask = (async () => {
-                  console.log(`🎙️ [Backend] Synthesizing TTS chunk [${currentIndex}]: "${currentSentenceToSpeak}"`);
-                  const audioBase64 = await synthesize(c.env, currentSentenceToSpeak, currentEmotion, lang);
-                  if (audioBase64) {
-                    ws.send(JSON.stringify({ 
-                      type: 'tts_audio', 
-                      index: currentIndex, 
-                      audioBase64 
-                    }));
-                  }
-                })();
-                ttsPromises.push(ttsTask);
-              }
-            }
-          }
-        } catch (e) {
-          // ignore JSON parse errors from SSE stream
+    for (const line of decoded.split('\n')) {
+      if (!line.startsWith('data: ') || line.includes('[DONE]')) continue;
+      try {
+        const data = JSON.parse(line.substring(6));
+        if (data.response) {
+          rawResponse += data.response;
+          publishText();
         }
+      } catch {
+        // ignore incomplete JSON chunks
       }
     }
   }
 
-  // Process leftover text
-  if (currentSentence.trim().length > 2) {
-    let sentenceToSpeak = currentSentence.trim();
-    let emotionTag = 'neutral';
-    const emotionMatch = sentenceToSpeak.match(/\[emotion:\s*(.*?)\]/i);
-    if (emotionMatch) {
-      emotionTag = emotionMatch[1];
-      sentenceToSpeak = sentenceToSpeak.replace(emotionMatch[0], '').trim();
-    }
-
-    const currentIndex = chunkIndex++;
-    const ttsTask = (async () => {
-      const audioBase64 = await synthesize(c.env, sentenceToSpeak, emotionTag, lang);
-      if (audioBase64) {
-        ws.send(JSON.stringify({ type: 'tts_audio', index: currentIndex, audioBase64 }));
-      }
-    })();
-    ttsPromises.push(ttsTask);
+  const spokenReply = publishText();
+  const whole = spokenReply.trim();
+  const hindi = !(lang || '').toLowerCase().startsWith('en');
+  const sentences = hindi
+    ? [whole]
+    : (whole.match(/[^.?!।]+[.?!।]+|[^.?!।]+$/g) ?? [whole])
+      .map((sentence) => sentence.trim())
+      .filter((sentence) => sentence.length > 1);
+  let index = 0;
+  for (const sentence of sentences) {
+    console.log(`🎙️ [Backend] Speaking sentence ${index + 1}/${sentences.length}`);
+    sendClip(index, sentence, await synthesizeBytes(c.env, sentence, lang));
+    index += 1;
   }
-
-  // Wait for all concurrent TTS chunks to finish before marking as done
-  await Promise.all(ttsPromises);
-  console.log('🎙️ [Backend] Completed sending all TTS chunks');
+  console.log('🎙️ [Backend] Completed sending the spoken reply');
   ws.send(JSON.stringify({ type: 'generation_done' }));
 
-  // 5. Update Conversation Context (Smart Memory)
-  await updateConversationContext(c.env, cleanUserId, currentSummary, transcribedText, fullResponse, 'Voice');
+  c.executionCtx.waitUntil(
+    updateConversationContext(c.env, cleanUserId, currentSummary, transcribedText, spokenReply, 'Voice'),
+  );
 }
 
 export default voice;
