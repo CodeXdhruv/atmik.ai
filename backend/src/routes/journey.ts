@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { Bindings } from '../types/env';
-import { verifyFirebaseToken } from '../utils/auth';
+import { assertAdmin } from '../utils/auth';
 
 const journey = new Hono<{ Bindings: Bindings, Variables: { user: any } }>();
 
@@ -25,27 +25,36 @@ async function ensureJourneyPoolTableExists(db: any) {
 // Returns today's active bundle for the mobile app (rotates automatically at 12:00 AM midnight)
 journey.get('/today', async (c) => {
   try {
-    await ensureJourneyPoolTableExists(c.env.DB);
-
-    // 1. Fetch all items from D1 JourneyPool table ordered by original sequence
-    const poolRes = await c.env.DB.prepare(
-      'SELECT * FROM JourneyPool ORDER BY createdAt ASC, id ASC'
-    ).all();
-
-    if (!poolRes.results || poolRes.results.length === 0) {
-      return c.json({ success: false, message: 'No journey items found in pool' }, 404);
-    }
-
-    // 2. Calculate deterministic daily index based on 12:00 AM midnight (IST UTC+5:30)
     const now = new Date();
     const istOffsetMs = 5.5 * 60 * 60 * 1000;
     const localDayNumber = Math.floor((now.getTime() + istOffsetMs) / (24 * 60 * 60 * 1000));
 
-    const totalItems = poolRes.results.length;
-    const selectedIndex = localDayNumber % totalItems;
-    const selectedItem: any = poolRes.results[selectedIndex];
+    const cacheUrl = new URL(c.req.url);
+    cacheUrl.search = `?day=${localDayNumber}`;
+    const cacheKey = new Request(cacheUrl.toString(), { method: 'GET' });
+    try {
+      const cached = await (caches as any).default.match(cacheKey);
+      if (cached) return cached;
+    } catch (cacheErr) {
+      console.warn('Journey cache read skipped', cacheErr);
+    }
 
-    return c.json({
+    const countRow = await c.env.DB.prepare('SELECT COUNT(*) as n FROM JourneyPool').first<{ n: number }>();
+    const totalItems = Number(countRow?.n || 0);
+    if (!totalItems) {
+      return c.json({ success: false, message: 'No journey items found in pool' }, 404);
+    }
+
+    const selectedIndex = localDayNumber % totalItems;
+    const selectedItem: any = await c.env.DB.prepare(
+      'SELECT * FROM JourneyPool ORDER BY createdAt ASC, id ASC LIMIT 1 OFFSET ?'
+    ).bind(selectedIndex).first();
+
+    if (!selectedItem) {
+      return c.json({ success: false, message: 'No journey items found in pool' }, 404);
+    }
+
+    const response = c.json({
       success: true,
       dayIndex: selectedIndex + 1,
       totalDays: totalItems,
@@ -62,8 +71,21 @@ journey.get('/today', async (c) => {
           : selectedItem.thoughtToCarry,
       }
     });
+    response.headers.set('Cache-Control', 'public, max-age=300');
+    c.executionCtx.waitUntil(
+      (caches as any).default.put(cacheKey, response.clone()).catch((cacheErr: unknown) => {
+        console.warn('Journey cache write skipped', cacheErr);
+      })
+    );
+    return response;
   } catch (error: any) {
-    return c.json({ error: error.message }, 500);
+    console.error('Journey today failed', error);
+    try {
+      await ensureJourneyPoolTableExists(c.env.DB);
+    } catch {
+      // Table creation is only a fallback when the pool query failed.
+    }
+    return c.json({ error: 'Could not load today\'s journey' }, 500);
   }
 });
 
@@ -72,6 +94,9 @@ journey.get('/today', async (c) => {
 // POST /api/admin/journey/upload
 // Upload JSON array of daily journey items
 journey.post('/upload', async (c) => {
+  const denied = await assertAdmin(c);
+  if (denied) return denied;
+
   try {
     const items = await c.req.json();
     if (!Array.isArray(items) || items.length === 0) {
