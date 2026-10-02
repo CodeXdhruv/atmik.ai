@@ -24,7 +24,24 @@ async function englishVoice(env: Bindings, text: string): Promise<Uint8Array | n
   return readAudio(response);
 }
 
-async function requestHindiVoice(env: Bindings, text: string, model: string): Promise<Uint8Array | null> {
+export type VoiceFeeling = 'empathetic' | 'encouraging' | 'joyful' | 'calm';
+
+export function feelingFromUser(text: string): VoiceFeeling {
+  if (/अकेला|अकेल|lonely|दुख|hurt|रो |cry|डर|afraid|fear|गुस्सा|anger|उदास|sad|pain|अकेलापन/i.test(text)) return 'empathetic';
+  if (/खुश|happy|thank|धन्यवाद|joy|मज़ा|मजा|love|प्यार/i.test(text)) return 'joyful';
+  if (/कैसे|how|help|मदद|करूँ|करूं|क्या कर/i.test(text)) return 'encouraging';
+  return 'calm';
+}
+
+function withFeeling(text: string, feeling: VoiceFeeling): { text: string; speed: number } {
+  const line = text.replace(/\s+/g, ' ').trim();
+  if (feeling === 'empathetic') return { text: `<sigh> ${line}`, speed: 0.92 };
+  if (feeling === 'encouraging') return { text: `<emphasize>${line}</emphasize>`, speed: 1.04 };
+  if (feeling === 'joyful') return { text: line, speed: 1.06 };
+  return { text: line, speed: 0.97 };
+}
+
+async function requestHindiVoice(env: Bindings, text: string, speed: number): Promise<Uint8Array | null> {
   const key = env.YOURVOIC_API_KEY;
   if (!key) return null;
   const response = await fetch('https://yourvoic.com/api/v1/tts/generate', {
@@ -34,39 +51,43 @@ async function requestHindiVoice(env: Bindings, text: string, model: string): Pr
       'X-API-Key': key,
       Authorization: `Bearer ${key}`,
     },
-    signal: AbortSignal.timeout(20_000),
+    signal: AbortSignal.timeout(8_000),
     body: JSON.stringify({
       text,
-      model,
-      language: 'hi-IN',
+      model: 'aura-lite',
+      language: 'hi',
       voice: 'Deepika',
-      speed: 0.94,
+      speed,
       format: 'mp3',
     }),
   });
   if (!response.ok) {
-    console.error(`YourVoic ${model} error:`, await response.text());
+    console.error('YourVoic Deepika error:', await response.text());
     return null;
   }
   const audio = new Uint8Array(await response.arrayBuffer());
   return audio.byteLength > 80 ? audio : null;
 }
 
-async function hindiVoice(env: Bindings, text: string): Promise<Uint8Array | null> {
-  const natural = await requestHindiVoice(env, text, 'aura-prime');
-  if (natural) return natural;
-  return requestHindiVoice(env, text, 'aura-lite');
+async function hindiVoice(env: Bindings, text: string, feeling: VoiceFeeling): Promise<Uint8Array | null> {
+  const spoken = withFeeling(text, feeling);
+  return requestHindiVoice(env, spoken.text, spoken.speed);
 }
 
-export async function synthesizeBytes(env: Bindings, text: string, lang: string = 'en'): Promise<Uint8Array | null> {
+export async function synthesizeBytes(
+  env: Bindings,
+  text: string,
+  lang: string = 'en',
+  feeling: VoiceFeeling = 'calm',
+): Promise<Uint8Array | null> {
   const cleanLang = (lang || 'en').toLowerCase().trim();
   try {
     if (cleanLang === 'en' || cleanLang.startsWith('en')) {
       console.log(`🎙️ [TTS] English edge voice: "${text}"`);
       return await englishVoice(env, text);
     }
-    console.log(`🎙️ [TTS] Hindi voice: "${text}"`);
-    const hindi = await hindiVoice(env, text);
+    console.log(`🎙️ [TTS] Deepika (${feeling}): "${text}"`);
+    const hindi = await hindiVoice(env, text, feeling);
     if (hindi) return hindi;
     if (!env.TTS_ENDPOINT) return null;
     console.log(`🎙️ [TTS] Hindi backup voice: "${text}"`);
@@ -74,7 +95,7 @@ export async function synthesizeBytes(env: Bindings, text: string, lang: string 
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal: AbortSignal.timeout(20_000),
-      body: JSON.stringify({ inputs: text, language: 'hi', emotion: 'neutral' }),
+      body: JSON.stringify({ inputs: text, language: 'hi', emotion: feeling }),
     });
     if (!backup.ok) return null;
     const audio = new Uint8Array(await backup.arrayBuffer());
@@ -91,7 +112,7 @@ export async function warmVoice(env: Bindings, lang: string): Promise<void> {
       await englishVoice(env, 'Hello.');
       return;
     }
-    await hindiVoice(env, 'नमस्ते');
+    await hindiVoice(env, 'नमस्ते', 'calm');
   } catch (err) {
     console.warn('🎙️ [TTS] Voice warm-up failed', err);
   }
