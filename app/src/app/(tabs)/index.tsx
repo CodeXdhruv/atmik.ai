@@ -1,6 +1,6 @@
 import { Skeleton } from 'moti/skeleton';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, RefreshControl } from 'react-native';
 import { Image, ImageBackground } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -8,9 +8,11 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Spacing, Radius, Shadows } from '@/constants/theme';
 import { Bell, Lightbulb, CheckCircle2, Check, Edit3, Edit2, Heart, ChevronRight, Bookmark, Sprout } from 'lucide-react-native';
 import { usePracticeStore } from '../../store/usePracticeStore';
+import { useAppStore } from '../../store/useAppStore';
 import { apiService } from '../../services/api';
 import * as Linking from 'expo-linking';
 import { RecommendedSection, LetItGoCard } from '@/components/home/HomeComponents';
+import auth from '@react-native-firebase/auth';
 
 
 const { width } = Dimensions.get('window');
@@ -49,7 +51,7 @@ const HeroCarousel = ({ quotes }: { quotes: any[] }) => {
             <ImageBackground
               source={require('@/assets/images/quotes_background.webp')}
               style={styles.heroBackground}
-              imageStyle={{ borderRadius: Radius.lg - 0.5, resizeMode: 'cover' }}
+              imageStyle={{ borderRadius: 24, resizeMode: 'cover' }}
             >
               <View style={styles.heroContent}>
                 <View style={{ width: '65%' }}>
@@ -81,9 +83,14 @@ export default function HomeScreen() {
   const completedHabits = habits.filter(h => h.completed).length;
   const isGratitudeComplete = gratitudes.every(g => g.trim().length > 0);
 
+  const currentUser = auth().currentUser;
+  const firstName = currentUser?.displayName ? currentUser.displayName.split(' ')[0] : '';
+  const greetingText = firstName ? `Welcome back, ${firstName}!` : 'Welcome back!';
+
   const [recommendedContent, setRecommendedContent] = useState<any[]>([]);
   const [todaysForYouData, setTodaysForYouData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Load cached recommendations instantly on mount (0 ms latency)
   useEffect(() => {
@@ -97,7 +104,7 @@ export default function HomeScreen() {
     loadCached();
   }, []);
 
-  const loadHomeData = useCallback(async () => {
+  const loadHomeData = useCallback(async (forceRefresh = false) => {
     try {
       const data = await apiService.fetchLibraryContent();
       setRecommendedContent(data);
@@ -105,6 +112,13 @@ export default function HomeScreen() {
       console.error("Failed to load library content", e);
     } finally {
       setIsLoading(false);
+    }
+
+    try {
+      const bookmarksData = await apiService.getBookmarks();
+      useAppStore.getState().setBookmarks(bookmarksData.map((b: any) => b.contentId));
+    } catch (e) {
+      console.warn("Failed to load bookmarks", e);
     }
 
     try {
@@ -118,7 +132,7 @@ export default function HomeScreen() {
 
     // Quotes logic
     const today = new Date().toDateString();
-    if (lastQuoteRefreshDate !== today || currentDailyQuotes.length === 0) {
+    if (forceRefresh || lastQuoteRefreshDate !== today || currentDailyQuotes.length === 0) {
       try {
         const allQuotes = await apiService.fetchQuotesPool();
         let unseen = allQuotes.filter((q: any) => !seenQuoteIds.includes(q.id));
@@ -149,20 +163,32 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadHomeData();
+      loadHomeData(false);
     }, [loadHomeData])
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadHomeData(true);
+    setRefreshing(false);
+  }, [loadHomeData]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <StatusBar style="dark" />
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
+        }
+      >
 
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <View>
-              <Text style={styles.greeting}>Welcome back, Dhruv!</Text>
+              <Text style={styles.greeting}>{greetingText}</Text>
               <Text style={styles.subGreeting}>How are you feeling today?</Text>
             </View>
           </View>
@@ -302,7 +328,7 @@ const styles = StyleSheet.create({
   },
   heroCard: {
     height: 220,
-    borderRadius: Radius.lg,
+    borderRadius: 24,
     overflow: 'hidden',
     backgroundColor: 'transparent',
     borderWidth: 0.5,
