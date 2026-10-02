@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { Bindings } from '../types/env';
+import { assertAdmin } from '../utils/auth';
 
 const forYou = new Hono<{ Bindings: Bindings, Variables: { user: any } }>();
 
@@ -29,8 +30,6 @@ async function ensureForYouPoolTableExists(db: any) {
 // Returns today's active micro-experience for the mobile app (rotates automatically at midnight IST)
 forYou.get('/today', async (c) => {
   try {
-    await ensureForYouPoolTableExists(c.env.DB);
-
     // Fetch all items from D1 ForYouPool table ordered by original sequence
     const poolRes = await c.env.DB.prepare(
       'SELECT * FROM ForYouPool ORDER BY createdAt ASC, id ASC'
@@ -91,13 +90,22 @@ forYou.get('/today', async (c) => {
       }
     });
   } catch (error: any) {
-    return c.json({ error: error.message }, 500);
+    console.error('For You today failed', error);
+    try {
+      await ensureForYouPoolTableExists(c.env.DB);
+    } catch {
+      // Table creation is only a fallback when the pool query failed.
+    }
+    return c.json({ error: 'Could not load today\'s item' }, 500);
   }
 });
 
 // POST /api/for-you/upload (also mounted at /api/admin/for-you/upload)
 // Upload JSON array of micro-experiences
 forYou.post('/upload', async (c) => {
+  const denied = await assertAdmin(c);
+  if (denied) return denied;
+
   try {
     const rawPayload = await c.req.json();
     const items = Array.isArray(rawPayload)
