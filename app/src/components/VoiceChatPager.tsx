@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -6,10 +6,7 @@ import {
   Dimensions,
   TouchableOpacity,
   TextInput,
-  KeyboardAvoidingView,
-  Platform,
   FlatList,
-  ScrollView,
   Keyboard,
   ActivityIndicator,
 } from "react-native";
@@ -19,22 +16,18 @@ import {
   Gesture,
 } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import auth from '@react-native-firebase/auth';
 import EventSource from "react-native-sse";
 import { useVoiceChat } from "../hooks/useVoiceChat";
 import { API_BASE_URL } from "../api/client";
 import {
   ArrowLeft,
-  Settings2,
   Mic,
   Send,
   Info,
   RotateCcw,
-  Sparkles,
-  User,
-  MessageSquare,
-  Activity,
+  SquarePen,
   ChevronRight,
   ChevronLeft,
 } from "lucide-react-native";
@@ -56,6 +49,7 @@ import Animated, {
   Easing,
   withSpring,
   runOnJS,
+  useAnimatedReaction,
 } from "react-native-reanimated";
 
 const { width } = Dimensions.get("window");
@@ -104,6 +98,33 @@ interface VoiceChatPagerProps {
   initialPage?: 'voice' | 'chat';
 }
 
+function LangToggle({
+  selectedLang,
+  onChange,
+}: {
+  selectedLang: 'hi' | 'en';
+  onChange: (lang: 'hi' | 'en') => void;
+}) {
+  return (
+    <View style={styles.langSegment}>
+      <TouchableOpacity
+        style={[styles.langSegmentBtn, selectedLang === 'en' && styles.langSegmentBtnActive]}
+        onPress={() => onChange('en')}
+        activeOpacity={0.8}
+      >
+        <Text style={[styles.langSegmentText, selectedLang === 'en' && styles.langSegmentTextActive]}>EN</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.langSegmentBtn, selectedLang === 'hi' && styles.langSegmentBtnActive]}
+        onPress={() => onChange('hi')}
+        activeOpacity={0.8}
+      >
+        <Text style={[styles.langSegmentText, selectedLang === 'hi' && styles.langSegmentTextActive]}>हिं</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 export default function VoiceChatPager({ initialPage = 'chat' }: VoiceChatPagerProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -121,10 +142,45 @@ export default function VoiceChatPager({ initialPage = 'chat' }: VoiceChatPagerP
 
   // Shared state & logic for Chat screen
   const [chatMessages, setChatMessages] = useState<{ id: string; text: string; role: "user" | "ai" }[]>([]);
+
+  const forgetChatSession = () => {
+    auth().currentUser?.getIdToken(false).then((token) => {
+      if (!token) return;
+      fetch(`${API_BASE_URL}/chat/session`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => {});
+    }).catch(() => {});
+  };
+
   const [inputText, setInputText] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
+
+  const startNewChat = () => {
+    setChatMessages([]);
+    setInputText('');
+    setIsChatLoading(false);
+    forgetChatSession();
+  };
+
+  const changeChatLanguage = (lang: 'hi' | 'en') => {
+    if (lang === selectedLang) return;
+    setChatMessages([]);
+    setInputText('');
+    setSelectedLang(lang);
+    forgetChatSession();
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      if (initialPage !== 'chat') return;
+      setChatMessages([]);
+      setInputText('');
+      setIsChatLoading(false);
+      forgetChatSession();
+    }, [initialPage]),
+  );
   const chatFlatListRef = useRef<FlatList>(null);
-  const voiceScrollViewRef = useRef<ScrollView>(null);
 
   // Reanimated animations for Orbs
   const pulse = useSharedValue(0);
@@ -163,18 +219,53 @@ export default function VoiceChatPager({ initialPage = 'chat' }: VoiceChatPagerP
     }
   }, [voiceChat.isRecording]);
 
-  const prevVoiceMsgLen = useRef(voiceChat.messages.length);
-  useEffect(() => {
-    if (voiceChat.messages.length > prevVoiceMsgLen.current || voiceChat.isRecording) {
-      voiceScrollViewRef.current?.scrollToEnd({ animated: true });
-    }
-    prevVoiceMsgLen.current = voiceChat.messages.length;
-  }, [voiceChat.messages.length, voiceChat.isRecording]);
-
   const keyboard = useAnimatedKeyboard();
+  const chatPageHeight = useSharedValue(0);
+  const chatPageHeightClosed = useSharedValue(0);
 
-  const animatedChatContentStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: -keyboard.height.value }]
+  const onChatPageLayout = (event: { nativeEvent: { layout: { height: number } } }) => {
+    const height = event.nativeEvent.layout.height;
+    chatPageHeight.value = height;
+    if (keyboard.height.value < 1) {
+      chatPageHeightClosed.value = height;
+    }
+  };
+
+  const scrollChatToEnd = () => {
+    chatFlatListRef.current?.scrollToEnd({ animated: false });
+  };
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () => {
+      scrollChatToEnd();
+      setTimeout(scrollChatToEnd, 80);
+    });
+    return () => show.remove();
+  }, []);
+
+  useAnimatedReaction(
+    () => keyboard.height.value,
+    (height, previous) => {
+      if (height < 1 && chatPageHeight.value > 0) {
+        chatPageHeightClosed.value = chatPageHeight.value;
+      }
+      if (height > 80 && (previous ?? 0) <= 80) {
+        runOnJS(scrollChatToEnd)();
+      }
+    },
+  );
+
+  // Pad only the part of the keyboard that the window did not already absorb.
+  // Translating the whole thread by the keyboard height pushes messages off screen.
+  const animatedChatBodyStyle = useAnimatedStyle(() => {
+    const keyboardHeight = keyboard.height.value;
+    const alreadyResized = Math.max(0, chatPageHeightClosed.value - chatPageHeight.value);
+    const overlap = Math.max(0, keyboardHeight - alreadyResized);
+    return { paddingBottom: overlap };
+  });
+
+  const animatedInputStyle = useAnimatedStyle(() => ({
+    paddingBottom: keyboard.height.value > 0 ? 10 : Math.max(24, insets.bottom + 20),
   }));
 
   const animatedGlow = useAnimatedStyle(() => ({
@@ -189,6 +280,21 @@ export default function VoiceChatPager({ initialPage = 'chat' }: VoiceChatPagerP
   const animatedMic = useAnimatedStyle(() => ({
     transform: [{ scale: interpolate(micPulse.value, [0, 1], [1, 1.1]) }],
     opacity: interpolate(micPulse.value, [0, 1], [0.5, 0.2]),
+  }));
+
+  const voiceGlow = useSharedValue(0.35);
+  useEffect(() => {
+    const target = voiceChat.isRecording
+      ? 0.4 + voiceChat.micLevel * 0.6
+      : voiceChat.isSpeaking
+        ? 0.85
+        : 0.35;
+    voiceGlow.value = withTiming(target, { duration: 140 });
+  }, [voiceChat.isRecording, voiceChat.isSpeaking, voiceChat.micLevel]);
+
+  const animatedVoiceGlow = useAnimatedStyle(() => ({
+    opacity: voiceGlow.value,
+    transform: [{ scale: 0.94 + voiceGlow.value * 0.12 }],
   }));
 
   // Page Switch Navigation Helpers
@@ -259,6 +365,13 @@ export default function VoiceChatPager({ initialPage = 'chat' }: VoiceChatPagerP
 
       const currentUser = auth().currentUser;
       const token = currentUser ? await currentUser.getIdToken() : '';
+      if (!token) {
+        setChatMessages((prev) => prev.map(msg =>
+          msg.id === aiMessageId ? { ...msg, text: 'Sign in to chat.' } : msg
+        ));
+        setIsChatLoading(false);
+        return;
+      }
 
       const es = new EventSource(`${API_BASE_URL}/chat`, {
         method: 'POST',
@@ -266,7 +379,10 @@ export default function VoiceChatPager({ initialPage = 'chat' }: VoiceChatPagerP
           'Content-Type': 'application/json',
           ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ text: userMessage.text, userId: currentUser?.uid || "test-user-123" }),
+        body: JSON.stringify({
+          text: userMessage.text,
+          lang: selectedLang,
+        }),
       });
 
       es.addEventListener("message", (event) => {
@@ -316,7 +432,15 @@ export default function VoiceChatPager({ initialPage = 'chat' }: VoiceChatPagerP
     );
   };
 
-  const hasVoiceMessages = voiceChat.messages.length > 0 || voiceChat.isRecording;
+  const voiceStatus = voiceChat.error
+    ? voiceChat.error
+    : voiceChat.isRecording
+      ? 'Listening'
+      : voiceChat.isSpeaking
+        ? 'Speaking'
+        : voiceChat.isThinking
+          ? 'One moment'
+          : 'Tap mic to speak';
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: BG }}>
@@ -336,136 +460,59 @@ export default function VoiceChatPager({ initialPage = 'chat' }: VoiceChatPagerP
                   <Text style={styles.headerTitle}>AI Voice</Text>
                 </View>
 
-                <TouchableOpacity 
-                  style={styles.langToggle}
-                  onPress={() => setSelectedLang(prev => prev === 'hi' ? 'en' : 'hi')}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.langToggleText}>
-                    {selectedLang === 'hi' ? '🇮🇳 Hindi' : '🇬🇧 English'}
-                  </Text>
-                </TouchableOpacity>
+                <LangToggle selectedLang={selectedLang} onChange={setSelectedLang} />
               </View>
 
-              {/* Central Section */}
-              {!hasVoiceMessages ? (
-                <View style={styles.orbContainer}>
-                  <Animated.View style={[styles.outerCircle, { width: 380, height: 380 }]} />
-                  <Animated.View style={[styles.outerCircle, { width: 320, height: 320 }]} />
+              <View style={styles.orbContainer}>
+                <Animated.View style={[styles.outerCircle, { width: 340, height: 340 }]} />
+                <Animated.View style={[styles.outerCircle, { width: 280, height: 280 }]} />
 
-                  <Animated.View style={[styles.dottedRingContainer, animatedRing]}>
-                    <Svg width={260} height={260}>
-                      <Circle cx="130" cy="130" r="129" stroke={GOLD} strokeWidth="1" strokeDasharray="2, 6" fill="none" opacity="0.5" />
-                      <Circle cx="130" cy="1" r="3" fill="#FFF" />
-                      <Circle cx="130" cy="1" r="5" fill={GOLD} opacity="0.5" />
-                      <Circle cx="1" cy="130" r="3" fill="#FFF" />
-                      <Circle cx="1" cy="130" r="5" fill={GOLD} opacity="0.5" />
-                      <Circle cx="259" cy="130" r="3" fill="#FFF" />
-                      <Circle cx="259" cy="130" r="5" fill={GOLD} opacity="0.5" />
-                      <Circle cx="130" cy="259" r="3" fill="#FFF" />
-                      <Circle cx="130" cy="259" r="5" fill={GOLD} opacity="0.5" />
-                    </Svg>
-                  </Animated.View>
+                <Animated.View style={[styles.dottedRingContainer, animatedRing]}>
+                  <Svg width={260} height={260}>
+                    <Circle cx="130" cy="130" r="129" stroke={GOLD} strokeWidth="1" strokeDasharray="2, 6" fill="none" opacity="0.5" />
+                    <Circle cx="130" cy="1" r="3" fill="#FFF" />
+                    <Circle cx="130" cy="1" r="5" fill={GOLD} opacity="0.5" />
+                    <Circle cx="1" cy="130" r="3" fill="#FFF" />
+                    <Circle cx="1" cy="130" r="5" fill={GOLD} opacity="0.5" />
+                    <Circle cx="259" cy="130" r="3" fill="#FFF" />
+                    <Circle cx="259" cy="130" r="5" fill={GOLD} opacity="0.5" />
+                    <Circle cx="130" cy="259" r="3" fill="#FFF" />
+                    <Circle cx="130" cy="259" r="5" fill={GOLD} opacity="0.5" />
+                  </Svg>
+                </Animated.View>
 
-                  <Animated.View style={[styles.centerGlow, animatedGlow]}>
-                    <Svg width="200" height="200">
-                      <Defs>
-                        <RadialGradient id="gradVoice" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
-                          <Stop offset="0%" stopColor="#FFF" stopOpacity="1" />
-                          <Stop offset="50%" stopColor={GOLD} stopOpacity="0.4" />
-                          <Stop offset="100%" stopColor={BG} stopOpacity="0" />
-                        </RadialGradient>
-                      </Defs>
-                      <Circle cx="100" cy="100" r="100" fill="url(#gradVoice)" />
-                    </Svg>
-                  </Animated.View>
+                <Animated.View style={[styles.centerGlow, animatedVoiceGlow]}>
+                  <Svg width="200" height="200">
+                    <Defs>
+                      <RadialGradient id="gradVoice" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+                        <Stop offset="0%" stopColor="#FFF" stopOpacity="1" />
+                        <Stop offset="50%" stopColor={GOLD} stopOpacity="0.4" />
+                        <Stop offset="100%" stopColor={BG} stopOpacity="0" />
+                      </RadialGradient>
+                    </Defs>
+                    <Circle cx="100" cy="100" r="100" fill="url(#gradVoice)" />
+                  </Svg>
+                </Animated.View>
 
-                  <View style={styles.lotusWrapper}>
-                    <LotusIcon size={110} color={GOLD} />
-                  </View>
+                <View style={styles.lotusWrapper}>
+                  <LotusIcon size={110} color={GOLD} />
                 </View>
-              ) : (
-                <View style={styles.conversationContainer}>
-                  <View style={styles.conversationHeader}>
-                    <View style={styles.convoBadge}>
-                      <MessageSquare size={14} color={GOLD} />
-                      <Text style={styles.convoBadgeText}>Live Conversation</Text>
-                    </View>
+              </View>
 
-                    <TouchableOpacity 
-                      style={styles.resetButton}
-                      onPress={voiceChat.clearMessages}
-                      activeOpacity={0.7}
-                    >
-                      <RotateCcw size={14} color={NAVY} />
-                      <Text style={styles.resetButtonText}>New Chat</Text>
-                    </TouchableOpacity>
-                  </View>
+              <View style={styles.voiceCaptionBlock}>
+                {voiceChat.transcription ? (
+                  <Text style={styles.voiceUserCaption} numberOfLines={2}>{voiceChat.transcription}</Text>
+                ) : null}
+                {voiceChat.spokenCaption ? (
+                  <Text style={styles.voiceAiCaption} numberOfLines={3}>{voiceChat.spokenCaption}</Text>
+                ) : null}
+              </View>
 
-                  <ScrollView 
-                    ref={voiceScrollViewRef}
-                    style={styles.chatScrollView}
-                    contentContainerStyle={styles.chatContentContainer}
-                    showsVerticalScrollIndicator={false}
-                  >
-                    {voiceChat.messages.map((item) => (
-                      <View 
-                        key={item.id} 
-                        style={[styles.msgRow, item.sender === 'user' ? styles.userRow : styles.aiRow]}
-                      >
-                        <View style={[styles.voiceMsgBubble, item.sender === 'user' ? styles.voiceUserBubble : styles.voiceAiBubble]}>
-                          <View style={styles.msgMetaHeader}>
-                            {item.sender === 'user' ? (
-                              <>
-                                <User size={12} color="#FFF" />
-                                <Text style={styles.userSenderName}>You</Text>
-                              </>
-                            ) : (
-                              <>
-                                <Sparkles size={12} color={GOLD} />
-                                <Text style={styles.aiSenderName}>Atmik AI</Text>
-                              </>
-                            )}
-                          </View>
-                          
-                          {item.sender === 'ai' && item.isStreaming && !item.text ? (
-                            <Text style={styles.thinkingText}>Thinking...</Text>
-                          ) : (
-                            <Text style={[styles.voiceMsgText, item.sender === 'user' ? styles.userVoiceMsgText : styles.aiVoiceMsgText]}>
-                              {item.text}
-                            </Text>
-                          )}
-                        </View>
-                      </View>
-                    ))}
-
-                    {voiceChat.isRecording && (
-                      <View style={[styles.msgRow, styles.userRow]}>
-                        <View style={[styles.voiceMsgBubble, styles.voiceUserBubble, { opacity: 0.8 }]}>
-                          <View style={styles.msgMetaHeader}>
-                            <User size={12} color="#FFF" />
-                            <Text style={styles.userSenderName}>Listening...</Text>
-                          </View>
-                          <Text style={styles.userVoiceMsgText}>{voiceChat.transcription || "Listening to your voice..."}</Text>
-                        </View>
-                      </View>
-                    )}
-                  </ScrollView>
-                </View>
-              )}
-
-              {/* Voice Status & Swipe Hint */}
               <View style={styles.statusContainer}>
-                {voiceChat.error ? (
-                  <Text style={[styles.listeningText, { color: 'red' }]}>{voiceChat.error}</Text>
-                ) : (
-                  <>
-                    <Text style={styles.listeningText} numberOfLines={2} ellipsizeMode="tail">
-                      {voiceChat.isRecording ? "Listening..." : (hasVoiceMessages ? "Tap mic to reply" : "Tap mic to speak")}
-                    </Text>
-                    {voiceChat.isRecording && <Text style={styles.tapToStopText}>Tap mic to stop & send</Text>}
-                  </>
-                )}
+                <Text style={[styles.listeningText, voiceChat.error ? { color: '#A33B3B' } : null]} numberOfLines={2}>
+                  {voiceStatus}
+                </Text>
+                {voiceChat.isRecording && <Text style={styles.tapToStopText}>Tap mic to send</Text>}
 
                 <TouchableOpacity style={styles.swipeHint} onPress={goToChat} activeOpacity={0.7}>
                   <Info size={12} color={GOLD} />
@@ -474,7 +521,6 @@ export default function VoiceChatPager({ initialPage = 'chat' }: VoiceChatPagerP
                 </TouchableOpacity>
               </View>
 
-              {/* Controls */}
               <View style={styles.controlsContainer}>
                 <TouchableOpacity style={styles.secondaryButton} onPress={voiceChat.clearMessages}>
                   <RotateCcw color={NAVY} size={22} strokeWidth={1.5} />
@@ -482,40 +528,49 @@ export default function VoiceChatPager({ initialPage = 'chat' }: VoiceChatPagerP
 
                 <View style={styles.micCenterContainer}>
                   <Animated.View style={[styles.micPulseRing, animatedMic]} />
-                  <TouchableOpacity 
-                    style={[styles.micButton, voiceChat.isRecording && { backgroundColor: '#E04F5F' }]} 
+                  <TouchableOpacity
+                    style={styles.micButton}
                     onPress={() => voiceChat.isRecording ? voiceChat.stopRecording() : voiceChat.startRecording()}
                   >
                     <Mic color="#FFF" size={32} strokeWidth={1.5} />
                   </TouchableOpacity>
                 </View>
 
-                <TouchableOpacity style={styles.secondaryButton}>
-                  <Activity color={NAVY} size={22} strokeWidth={1.5} />
-                </TouchableOpacity>
+                <View style={styles.secondaryButton} />
               </View>
             </View>
 
             {/* PAGE 1: CHAT SCREEN */}
-            <View style={[styles.pageWrapper, { paddingTop: insets.top + 10 }]}>
+            <View
+              style={[styles.pageWrapper, { paddingTop: insets.top + 10 }]}
+              onLayout={onChatPageLayout}
+            >
               {/* Header */}
               <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.iconButton}>
                   <ArrowLeft color={NAVY} size={24} strokeWidth={1.5} />
                 </TouchableOpacity>
 
-                <View style={styles.headerTitleContainer}>
+                <View style={styles.headerTitleOverlay} pointerEvents="none">
                   <Text style={styles.headerTitle}>AI Chat</Text>
                 </View>
 
-                <TouchableOpacity style={styles.iconButton}>
-                  <Settings2 color={NAVY} size={24} strokeWidth={1.5} />
-                </TouchableOpacity>
+                <View style={styles.headerActions}>
+                  <TouchableOpacity
+                    onPress={startNewChat}
+                    style={styles.newChatButton}
+                    hitSlop={8}
+                    accessibilityLabel="New conversation"
+                  >
+                    <SquarePen color={NAVY} size={18} strokeWidth={1.5} />
+                  </TouchableOpacity>
+                  <LangToggle selectedLang={selectedLang} onChange={changeChatLanguage} />
+                </View>
               </View>
 
-              <Animated.View style={[{ flex: 1, justifyContent: "space-between" }, animatedChatContentStyle]}>
+              <Animated.View style={[{ flex: 1, minHeight: 0 }, animatedChatBodyStyle]}>
                 {chatMessages.length === 0 ? (
-                  <View style={{ flex: 1, justifyContent: "center" }}>
+                  <View style={{ flex: 1, justifyContent: "center", overflow: "hidden" }}>
                     <View style={styles.orbContainer}>
                       <Animated.View style={[styles.outerCircle, { width: 380, height: 380 }]} />
                       <Animated.View style={[styles.outerCircle, { width: 320, height: 320 }]} />
@@ -576,26 +631,31 @@ export default function VoiceChatPager({ initialPage = 'chat' }: VoiceChatPagerP
                 ) : (
                   <FlatList
                     ref={chatFlatListRef}
+                    style={{ flex: 1, minHeight: 0 }}
                     data={chatMessages}
                     keyExtractor={item => item.id}
                     renderItem={renderChatMessage}
                     contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 20, flexGrow: 1 }}
+                    onLayout={scrollChatToEnd}
                     onContentSizeChange={() => chatFlatListRef.current?.scrollToEnd({ animated: true })}
-                    onLayout={() => chatFlatListRef.current?.scrollToEnd({ animated: true })}
                     keyboardShouldPersistTaps="handled"
                   />
                 )}
 
                 {/* Text Input Box */}
-                <View style={[styles.inputWrapper, { paddingBottom: Math.max(24, insets.bottom + 20) }]}>
+                <Animated.View style={[styles.inputWrapper, animatedInputStyle]}>
                   <View style={styles.inputBox}>
                     <TextInput
                       style={styles.textInput}
-                      placeholder="Type your message..."
+                      placeholder={selectedLang === 'hi' ? 'अपना संदेश लिखें...' : 'Type your message...'}
                       placeholderTextColor="#A0A0A0"
                       value={inputText}
                       onChangeText={setInputText}
-                      onSubmitEditing={handleChatSend}
+                      onFocus={scrollChatToEnd}
+                      multiline
+                      scrollEnabled
+                      textAlignVertical="center"
+                      blurOnSubmit={false}
                     />
                     <TouchableOpacity style={styles.inputMicButton} onPress={goToVoice}>
                       <Mic color={GOLD} size={22} strokeWidth={1.5} />
@@ -608,7 +668,7 @@ export default function VoiceChatPager({ initialPage = 'chat' }: VoiceChatPagerP
                       )}
                     </TouchableOpacity>
                   </View>
-                </View>
+                </Animated.View>
               </Animated.View>
             </View>
 
@@ -647,25 +707,56 @@ const styles = StyleSheet.create({
   headerTitleContainer: {
     alignItems: "center",
   },
+  headerTitleOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+  },
+  newChatButton: {
+    width: 32,
+    height: 32,
+    justifyContent: "center",
+    alignItems: "center",
+    opacity: 0.55,
+  },
   headerTitle: {
     fontSize: 20,
     fontWeight: "600",
     color: NAVY,
     fontFamily: "Georgia",
   },
-  langToggle: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+  langSegment: {
+    flexDirection: "row",
     backgroundColor: "#FFF",
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: GOLD,
-    elevation: 2,
+    padding: 2,
   },
-  langToggleText: {
-    fontSize: 13,
-    fontWeight: "600",
+  langSegmentBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+  },
+  langSegmentBtnActive: {
+    backgroundColor: GOLD,
+  },
+  langSegmentText: {
+    fontSize: 12,
+    fontWeight: "700",
     color: NAVY,
+  },
+  langSegmentTextActive: {
+    color: "#FFF",
   },
   orbContainer: {
     flex: 1,
@@ -830,9 +921,29 @@ const styles = StyleSheet.create({
   },
   listeningText: {
     fontSize: 18,
-    fontWeight: "600",
+    fontWeight: "500",
     color: NAVY,
-    marginBottom: 8,
+    fontFamily: "Georgia",
+    textAlign: "center",
+  },
+  voiceCaptionBlock: {
+    paddingHorizontal: 36,
+    paddingBottom: 8,
+    minHeight: 72,
+    justifyContent: "center",
+  },
+  voiceUserCaption: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: "#8C7B68",
+    textAlign: "center",
+    marginBottom: 6,
+  },
+  voiceAiCaption: {
+    fontSize: 16,
+    lineHeight: 22,
+    color: NAVY,
+    textAlign: "center",
   },
   tapToStopText: {
     fontSize: 14,
@@ -934,7 +1045,7 @@ const styles = StyleSheet.create({
   },
   inputBox: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-end",
     backgroundColor: "#FFF",
     borderRadius: 30,
     paddingLeft: 20,
@@ -950,9 +1061,14 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
     fontSize: 15,
     color: NAVY,
     minHeight: 40,
+    maxHeight: 120,
+    paddingTop: 8,
+    paddingBottom: 8,
   },
   inputMicButton: {
     padding: 10,
