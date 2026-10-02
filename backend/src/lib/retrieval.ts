@@ -141,15 +141,17 @@ export async function retrieveContext(
     return { text, principle: principleKey(text, metadata), section: sectionOf(text, metadata) };
   }).filter((item: RankedPassage) => item.text);
 
-  try {
-    const documents = ranked.map((item) => item.text);
-    const rerankResponse: any = await withTimeout(env.AI.run('@cf/baai/bge-reranker-base', {
-      query,
-      documents,
-    }), fast ? 8_000 : 20_000, 'Reranker');
-    ranked = applyRerank(ranked, rerankResponse);
-  } catch (error) {
-    console.error('Reranking failed, returning raw matches', error);
+  if (!fast) {
+    try {
+      const documents = ranked.map((item) => item.text);
+      const rerankResponse: any = await withTimeout(env.AI.run('@cf/baai/bge-reranker-base', {
+        query,
+        documents,
+      }), 20_000, 'Reranker');
+      ranked = applyRerank(ranked, rerankResponse);
+    } catch (error) {
+      console.error('Reranking failed, returning raw matches', error);
+    }
   }
 
   const context = capContext(diversify(preferTeachings(ranked), limit), charLimit);
