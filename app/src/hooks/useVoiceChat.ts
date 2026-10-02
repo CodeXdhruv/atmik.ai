@@ -97,21 +97,27 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
   const silenceStartRef = useRef<number | null>(null);
   const hasSpokenRef = useRef(false);
   const stoppingRef = useRef(false);
+  const capturingRef = useRef(false);
   const pendingClipRef = useRef<{ index: number; text: string } | null>(null);
 
   // Initialize WebSocket
+  const connectingRef = useRef(false);
   const connectWebSocket = useCallback(() => {
     const existing = wsRef.current;
+    if (connectingRef.current) return;
     if (existing && (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)) {
       return;
     }
+    connectingRef.current = true;
 
     auth().currentUser?.getIdToken(false).then((token) => {
       if (!token) {
+        connectingRef.current = false;
         setError('Sign in to use voice.');
         return;
       }
       if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+        connectingRef.current = false;
         return;
       }
 
@@ -120,6 +126,10 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
       ws.binaryType = 'arraybuffer';
 
       ws.onopen = () => {
+        if (wsRef.current !== ws) {
+          ws.close();
+          return;
+        }
         console.log('🗣️ [VoiceChat] WebSocket Connected');
         setIsConnected(true);
         setError(null);
@@ -147,10 +157,12 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
           return;
         }
 
+        if (wsRef.current !== ws) return;
         const data = JSON.parse(event.data) as VoiceMessage;
         
         switch (data.type) {
           case 'transcription':
+            capturingRef.current = false;
             console.log('🗣️ [VoiceChat] Received Transcription (STT):', data.text);
             const userText = data.text || '';
             setTranscription(userText);
@@ -168,6 +180,7 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
             ]);
             break;
           case 'text_replace':
+            if (capturingRef.current) break;
             aiTextRef.current = data.text || '';
             setAiText(aiTextRef.current);
             setMessages((prev) => {
@@ -182,7 +195,7 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
             });
             break;
           case 'text_stream':
-            console.log('🗣️ [VoiceChat] Received AI Text Stream chunk');
+            if (capturingRef.current) break;
             const chunk = data.text || '';
             aiTextRef.current += chunk;
             setAiText(aiTextRef.current);
@@ -210,6 +223,7 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
             }
             break;
           case 'tts_audio':
+            if (capturingRef.current) break;
             console.log('🗣️ [VoiceChat] Received Audio Response (TTS)', data.index);
             if (typeof data.index === 'number') {
               if (data.skipped || !data.audioBase64) {
@@ -221,6 +235,7 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
             }
             break;
           case 'generation_done':
+            if (capturingRef.current) break;
             console.log('🗣️ [VoiceChat] AI Response Generation Done');
             generationDoneRef.current = true;
             setSpokenCaption((caption) => caption || aiTextRef.current);
@@ -252,6 +267,9 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
     };
 
     ws.onclose = () => {
+      if (wsRef.current !== ws) return;
+      wsRef.current = null;
+      connectingRef.current = false;
       setIsConnected(false);
       console.log('🗣️ [VoiceChat] WebSocket closed, auto-reconnecting in background...');
       setTimeout(() => {
@@ -264,7 +282,9 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
     };
 
       wsRef.current = ws;
+      connectingRef.current = false;
     }).catch(() => {
+      connectingRef.current = false;
       setError('Sign in to use voice.');
     });
   }, []);
@@ -406,6 +426,8 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
   const startRecording = async () => {
     try {
       console.log('🗣️ [VoiceChat] startRecording called');
+      capturingRef.current = true;
+      stopAllAudio();
       setError(null);
       setTranscription('');
       setSpokenCaption('');
@@ -441,7 +463,6 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
       }
       recorder.record();
       setIsRecording(true);
-      stopAllAudio(); // Stop AI if speaking
     } catch (err) {
       console.error('🗣️ [VoiceChat] Failed to start recording', err);
       setError('Recording failed');
@@ -452,6 +473,7 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
     if (stoppingRef.current) return;
     stoppingRef.current = true;
     console.log('🗣️ [VoiceChat] stopRecording called');
+    capturingRef.current = false;
     setIsRecording(false);
     setMicLevel(0);
     try {
