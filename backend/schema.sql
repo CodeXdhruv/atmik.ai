@@ -62,3 +62,10 @@ CREATE TABLE IF NOT EXISTS JourneyPool (
     isUsed INTEGER DEFAULT 0,
     createdAt TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS Bookmark (
+    userId TEXT NOT NULL,
+    contentId TEXT NOT NULL,
+    createdAt TEXT NOT NULL,
+    PRIMARY KEY (userId, contentId)
+);
