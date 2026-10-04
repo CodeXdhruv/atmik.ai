@@ -18,7 +18,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "swatantra.ai",
+      "package": "com.atmik.ai",
       "googleServicesFile": "./google-services.json"
     },
     "web": {

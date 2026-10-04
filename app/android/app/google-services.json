@@ -7,28 +7,49 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:114419958748:android:dd5755b404357097aa4519",
+        "android_client_info": {
+          "package_name": "com.atmik.ai"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "114419958748-cagkm8e1h4tuquskpvsq57psnlo187ve.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.atmik.ai",
+            "certificate_hash": "4d8f16aef015ef775787dbac859326a778d4946f"
+          }
+        },
+        {
+          "client_id": "114419958748-7gasra4os0847ig60en259s5920nd21q.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDwiUwDPZh-ieBCYB5bUX-dAUpZANlxUoE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "114419958748-7gasra4os0847ig60en259s5920nd21q.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:114419958748:android:c47824dac3720dfbaa4519",
         "android_client_info": {
           "package_name": "swatantra.ai"
         }
       },
       "oauth_client": [
-        {
-          "client_id": "114419958748-e273tau170srbrg6gtac1uidft9v4to3.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "swatantra.ai",
-            "certificate_hash": "ddc83a108a2be41347dc09b39641b56f438bb49f"
-          }
-        },
-        {
-          "client_id": "114419958748-qjr62sclkhp3bmpil79qm6488te9b3cq.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "swatantra.ai",
-            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
-          }
-        },
         {
           "client_id": "114419958748-7gasra4os0847ig60en259s5920nd21q.apps.googleusercontent.com",
           "client_type": 3
