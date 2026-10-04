@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Share, Keyboard, LayoutAnimation, UIManager } from 'react-native';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -8,7 +8,7 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSequence, w
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Spacing, Radius, Shadows } from '@/constants/theme';
 import { dbService, ReflectionRecord } from '../../services/db';
-import { MessageCircle, CircleDot, Star, ArrowRight, Heart } from 'lucide-react-native';
+import { MessageCircle, CircleDot, Star, ArrowRight, Heart, RotateCcw } from 'lucide-react-native';
 
 type ExperienceData = {
   id?: string;
@@ -71,6 +71,23 @@ const TodaysReflectionCardComponent = ({ data }: { data: ExperienceData }) => {
   // Animation values
   const flipValue = useSharedValue(0); // 0 = front, 1 = back
   const pressScale = useSharedValue(1);
+  const userTextRef = useRef(userText);
+  const stageRef = useRef(stage);
+  userTextRef.current = userText;
+  stageRef.current = stage;
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        const wroteSomething = userTextRef.current.trim().length > 0;
+        const finished = stageRef.current === 'done' || stageRef.current === 'atmik_reply';
+        if (!wroteSomething && !finished) {
+          flipValue.value = 0;
+          setStage('front');
+        }
+      };
+    }, [flipValue])
+  );
 
   useEffect(() => {
     const checkCompletion = async () => {
@@ -132,6 +149,19 @@ const TodaysReflectionCardComponent = ({ data }: { data: ExperienceData }) => {
     };
   });
 
+  const flipToFront = () => {
+    Keyboard.dismiss();
+    flipValue.value = withSpring(0, {
+      damping: 18,
+      stiffness: 120,
+      mass: 0.8,
+    }, (finished) => {
+      if (finished) {
+        runOnJS(setStage)('front');
+      }
+    });
+  };
+
   const handleSubmit = () => {
     Keyboard.dismiss();
     let response = data.responseTemplate || data.responseConfiguration?.atmik_response_template || "Thank you for reflecting.";
@@ -172,7 +202,16 @@ const TodaysReflectionCardComponent = ({ data }: { data: ExperienceData }) => {
       <Animated.View style={[stylesTodaysReflectionCard.card, backStyle]}>
         {stage !== 'done' ? (
           <>
-            <Text style={stylesTodaysReflectionCard.label}>TAKE A MOMENT</Text>
+            <View style={stylesTodaysReflectionCard.backHeader}>
+              <Text style={stylesTodaysReflectionCard.label}>TAKE A MOMENT</Text>
+              <TouchableOpacity
+                onPress={flipToFront}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={stylesTodaysReflectionCard.unflipBtn}
+              >
+                <RotateCcw color="#8A7E6E" size={18} strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
             <View style={stylesTodaysReflectionCard.backContentContainer}>
               <Text style={stylesTodaysReflectionCard.backQuestion}>{data.question}</Text>
               <Text style={stylesTodaysReflectionCard.helper}>{data.backHelperText}</Text>
@@ -300,6 +339,19 @@ const stylesTodaysReflectionCard = StyleSheet.create({
     fontWeight: '500',
     color: '#8A7E6E',
     letterSpacing: 0.5,
+  },
+  backHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  unflipBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.7)',
   },
   backContentContainer: {
     flex: 1,
@@ -509,7 +561,9 @@ const LookWithinCardComponent = ({ data }: { data: LookWithinData }) => {
         onPress={handleExpand}
       >
         <View style={stylesLookWithinCard.headerLeft}>
-          <CircleDot color="#B8954A" size={20} />
+          <View style={stylesLookWithinCard.iconBadge}>
+            <CircleDot color="#B8954A" size={20} />
+          </View>
           <View style={stylesLookWithinCard.headerText}>
             <Text style={stylesLookWithinCard.title}>Look Within</Text>
             <Text style={stylesLookWithinCard.subtitle}>Notice what's happening inside</Text>
@@ -572,12 +626,20 @@ const stylesLookWithinCard = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    height: 60,
+    minHeight: 44,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
+  },
+  iconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F9F3EA',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerText: {
     justifyContent: 'center',
@@ -803,7 +865,7 @@ export const ThoughtToCarryCard = ({ data }: { data: WisdomData }) => {
       >
         <View style={stylesThoughtToCarryCard.headerLeft}>
           <View style={stylesThoughtToCarryCard.iconBadge}>
-            <Star color="#B8954A" size={18} />
+            <Star color="#B8954A" size={20} />
           </View>
           <View style={stylesThoughtToCarryCard.headerText}>
             <Text style={stylesThoughtToCarryCard.title}>A Thought to Carry</Text>
@@ -860,9 +922,9 @@ const stylesThoughtToCarryCard = StyleSheet.create({
     gap: 16,
   },
   iconBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#F9F3EA',
     justifyContent: 'center',
     alignItems: 'center',
