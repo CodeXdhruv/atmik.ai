@@ -180,7 +180,7 @@ library.put('/content/:id', async (c) => {
       const tokens = results.map((r: any) => r.pushToken).filter(Boolean);
 
       if (tokens.length > 0) {
-        const notifTitle = '📚 Library Content Updated!';
+        const notifTitle = 'Library Content Updated!';
         const notifBody = `"${title}" has been updated in the library. Tap to view!`;
         const notificationId = crypto.randomUUID();
 
