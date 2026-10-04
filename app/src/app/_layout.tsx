@@ -1,6 +1,9 @@
 import '../firebaseSilence';
+import '@react-native-firebase/crashlytics';
+import { getCrashlytics, setUserId } from '@react-native-firebase/crashlytics';
+import { getAuth, onAuthStateChanged } from '@react-native-firebase/auth';
 import { DarkTheme, DefaultTheme, ThemeProvider, Stack } from 'expo-router';
-import { useColorScheme, LogBox } from 'react-native';
+import { Platform, useColorScheme, LogBox } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import { useEffect } from 'react';
@@ -27,6 +30,14 @@ const CustomTheme = {
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   usePushNotifications();
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const crashlytics = getCrashlytics();
+    return onAuthStateChanged(getAuth(), user => {
+      setUserId(crashlytics, user?.uid ?? '').catch(() => {});
+    });
+  }, []);
   const [loaded, error] = useFonts({
     Samarkan: require('../../assets/fonts/Samarkan.ttf'),
   });
