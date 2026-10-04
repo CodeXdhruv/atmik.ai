@@ -222,11 +222,11 @@ const styles = StyleSheet.create({
   },
   pageHeader: {
     fontSize: 24,
-    fontFamily: FONTS.heading,
-    fontWeight: '700',
-    color: COLORS.primary,
+    fontFamily: 'serif',
+    fontWeight: '500',
+    color: '#1B2D4F',
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   
   // Settings Styles
