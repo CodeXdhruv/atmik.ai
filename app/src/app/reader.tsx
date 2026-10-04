@@ -2,7 +2,11 @@ import React, { useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, Dimensions, ActivityIndicator, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft } from 'lucide-react-native';
+import { ArrowLeft, Bookmark } from 'lucide-react-native';
+import { useAppStore } from '../store/useAppStore';
+import { apiService } from '../services/api';
+import { Colors } from '../constants/theme';
+import { rememberContinue } from '../services/continueReading';
 import Pdf from 'react-native-pdf';
 import * as FileSystem from 'expo-file-system/legacy';
 
@@ -10,7 +14,10 @@ const { width, height } = Dimensions.get('window');
 
 export default function BookReaderScreen() {
   const router = useRouter();
-  const { url, title } = useLocalSearchParams();
+  const { url, title, id, page } = useLocalSearchParams();
+  const contentId = Array.isArray(id) ? id[0] : id;
+  const startPage = Number(Array.isArray(page) ? page[0] : page) || 1;
+  const isBookmarked = useAppStore(state => contentId ? state.bookmarks.includes(String(contentId)) : false);
   const [totalPages, setTotalPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +54,18 @@ export default function BookReaderScreen() {
     }
   }, [url]);
 
+  React.useEffect(() => {
+    if (!contentId || totalPages < 1) return;
+    rememberContinue({
+      id: String(contentId),
+      type: 'BOOK',
+      title: String(title || 'Untitled'),
+      fileUrl: typeof url === 'string' ? url : undefined,
+      page: currentPage,
+      totalPages,
+    });
+  }, [contentId, title, url, currentPage, totalPages]);
+
   if (!url || typeof url !== 'string') {
     return (
       <SafeAreaView style={styles.container}>
@@ -75,7 +94,24 @@ export default function BookReaderScreen() {
             <Text style={styles.headerSubtitle}>Page {currentPage} of {totalPages}</Text>
           )}
         </View>
-        <View style={{ width: 44 }} />
+        {contentId ? (
+          <TouchableOpacity
+            onPress={() => {
+              useAppStore.getState().toggleBookmarkLocal(String(contentId));
+              apiService.toggleBookmark(String(contentId));
+            }}
+            style={styles.bookmarkButton}
+          >
+            <Bookmark
+              color={isBookmarked ? Colors.primary : '#0A2540'}
+              fill={isBookmarked ? Colors.primary : 'transparent'}
+              size={20}
+              strokeWidth={1.75}
+            />
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 44 }} />
+        )}
       </View>
 
       {/* PDF View */}
@@ -92,6 +128,7 @@ export default function BookReaderScreen() {
         ) : (
           <Pdf
             source={{ uri: localUri, cache: false }}
+            {...(startPage > 1 ? { page: startPage } : {})}
             onLoadComplete={(numberOfPages, filePath) => {
               setTotalPages(numberOfPages);
               console.log(`Number of pages: ${numberOfPages}`);
@@ -140,6 +177,12 @@ const styles = StyleSheet.create({
     height: 44,
     justifyContent: 'center',
     alignItems: 'flex-start',
+  },
+  bookmarkButton: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
   },
   headerTitleContainer: {
     flex: 1,

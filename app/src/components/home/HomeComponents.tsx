@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView } from 'react-native';
 import { Image, ImageBackground } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSequence, withRepeat, withDelay, Easing, runOnJS } from 'react-native-reanimated';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
-import { Wind, Check, Bookmark, ChevronRight } from 'lucide-react-native';
+import { Wind, Check, Bookmark, ChevronRight, Library, BookOpen } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Spacing, Radius, Shadows } from '@/constants/theme';
 import forYouData from '../../../assets/for_you_today.json';
@@ -386,9 +387,7 @@ const stylesLetItGoCard = StyleSheet.create({
   card: {
     backgroundColor: CARD_BG,
     borderRadius: Radius.lg,
-    padding: Spacing.md,
-    paddingTop: 14,
-    paddingBottom: 14,
+    padding: 10,
     shadowColor: '#8A7E6E',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
@@ -558,6 +557,27 @@ interface RecommendedSectionProps {
   onPressArticle: (item: LibraryItem) => void;
 }
 
+function SaveMark({ id, onCover = false }: { id: string; onCover?: boolean }) {
+  const isBookmarked = useAppStore(state => state.bookmarks.includes(id));
+  return (
+    <TouchableOpacity
+      style={[stylesRecommendedSection.saveBtn, onCover && stylesRecommendedSection.saveBtnOnCover]}
+      onPress={() => {
+        useAppStore.getState().toggleBookmarkLocal(id);
+        apiService.toggleBookmark(id);
+      }}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+    >
+      <Bookmark
+        color={isBookmarked ? Colors.primary : Colors.textSecondary}
+        fill={isBookmarked ? Colors.primary : 'transparent'}
+        size={14}
+        strokeWidth={1.75}
+      />
+    </TouchableOpacity>
+  );
+}
+
 // ─── Featured Book Card ──────────────────────────────────
 export const FeaturedBookCard = ({
   item,
@@ -570,50 +590,33 @@ export const FeaturedBookCard = ({
     ? { uri: item.coverUrl }
     : require('@/assets/images/mountain_bg.png');
 
-  const isBookmarked = useAppStore(state => state.bookmarks.includes(item.id));
-
   return (
     <TouchableOpacity
       style={stylesRecommendedSection.bookCard}
       activeOpacity={0.85}
       onPress={onPress}
     >
-      {/* Cover image — occupies upper ~65% */}
       <ImageBackground
         source={coverSource}
         style={stylesRecommendedSection.bookCover}
         imageStyle={stylesRecommendedSection.bookCoverImage}
-        resizeMode="cover"
+        contentFit="cover"
       >
-        <View style={stylesRecommendedSection.bookBadge}>
-          <Text style={stylesRecommendedSection.bookBadgeText}>BOOK</Text>
+        <View style={stylesRecommendedSection.bookTopRow}>
+          <View style={stylesRecommendedSection.bookBadge}>
+            <Text style={stylesRecommendedSection.bookBadgeText}>BOOK</Text>
+          </View>
+          <SaveMark id={item.id} onCover />
         </View>
       </ImageBackground>
 
-      {/* Info — occupies lower ~35% */}
       <View style={stylesRecommendedSection.bookInfo}>
         <Text style={stylesRecommendedSection.bookTitle} numberOfLines={2}>
           {item.title || 'Untitled'}
         </Text>
-        <View style={stylesRecommendedSection.bookFooter}>
-          <Text style={stylesRecommendedSection.bookAuthor} numberOfLines={1}>
-            {item.author || 'Dr. Swatantra Jain'}
-          </Text>
-          <TouchableOpacity 
-            onPress={() => {
-              useAppStore.getState().toggleBookmarkLocal(item.id);
-              apiService.toggleBookmark(item.id);
-            }}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Bookmark
-              color={isBookmarked ? Colors.primary : Colors.textSecondary}
-              fill={isBookmarked ? Colors.primary : 'transparent'}
-              size={16}
-              strokeWidth={1.5}
-            />
-          </TouchableOpacity>
-        </View>
+        <Text style={stylesRecommendedSection.bookAuthor} numberOfLines={1}>
+          {item.author || 'Dr. Swatantra Jain'}
+        </Text>
       </View>
     </TouchableOpacity>
   );
@@ -631,50 +634,26 @@ export const ArticleRecommendationCard = ({
     ? { uri: item.coverUrl }
     : require('@/assets/images/quotes_background.webp');
 
-  const isBookmarked = useAppStore(state => state.bookmarks.includes(item.id));
-
   return (
     <TouchableOpacity
       style={stylesRecommendedSection.articleCard}
       activeOpacity={0.85}
       onPress={onPress}
     >
-      {/* Left side — text content */}
+      <Image
+        source={thumbSource}
+        style={stylesRecommendedSection.articleThumb}
+        contentFit="cover"
+      />
       <View style={stylesRecommendedSection.articleTextCol}>
-        <View style={stylesRecommendedSection.articleBadge}>
-          <Text style={stylesRecommendedSection.articleBadgeText}>ARTICLE</Text>
-        </View>
         <Text style={stylesRecommendedSection.articleTitle} numberOfLines={2}>
           {item.title || 'Untitled'}
         </Text>
         <Text style={stylesRecommendedSection.articleMeta}>
-          {item.readTime ? `${item.readTime} min read` : '5 min read'}
+          {item.readTime ? `${item.readTime} min` : '5 min'}
         </Text>
       </View>
-
-      {/* Right side — thumbnail + bookmark */}
-      <View style={stylesRecommendedSection.articleRightCol}>
-        <TouchableOpacity 
-          style={{ marginBottom: 4 }}
-          onPress={() => {
-            useAppStore.getState().toggleBookmarkLocal(item.id);
-            apiService.toggleBookmark(item.id);
-          }}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Bookmark
-            color={isBookmarked ? Colors.primary : Colors.textSecondary}
-            fill={isBookmarked ? Colors.primary : 'transparent'}
-            size={16}
-            strokeWidth={1.5}
-          />
-        </TouchableOpacity>
-        <Image
-          source={thumbSource}
-          style={stylesRecommendedSection.articleThumb}
-          resizeMode="cover"
-        />
-      </View>
+      <SaveMark id={item.id} />
     </TouchableOpacity>
   );
 };
@@ -702,7 +681,13 @@ export const RecommendedSection = ({
     <View style={stylesRecommendedSection.section}>
       {/* Header row */}
       <View style={stylesRecommendedSection.headerRow}>
-        <Text style={stylesRecommendedSection.sectionHeading}>Recommended for You</Text>
+        <View style={stylesRecommendedSection.headingGroup}>
+          <Library color={Colors.accent} size={24} strokeWidth={2} />
+          <View style={stylesRecommendedSection.headingText}>
+            <Text style={stylesRecommendedSection.sectionHeading}>Recommended for You</Text>
+            <Text style={stylesRecommendedSection.sectionSubtitle}>A book and a few articles to read.</Text>
+          </View>
+        </View>
         <TouchableOpacity
           onPress={onViewAll}
           style={stylesRecommendedSection.viewAllBtn}
@@ -753,6 +738,7 @@ const ARTICLE_CARD_HEIGHT = (BOOK_CARD_HEIGHT - ARTICLE_GAP * 2) / 3;
 const stylesRecommendedSection = StyleSheet.create({
   // Section wrapper
   section: {
+    marginTop: -8,
     marginBottom: Spacing.lg,
   },
 
@@ -764,11 +750,26 @@ const stylesRecommendedSection = StyleSheet.create({
     paddingHorizontal: HORIZONTAL_PADDING,
     marginBottom: 16,
   },
+  headingGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    marginRight: 8,
+  },
+  headingText: {
+    flex: 1,
+  },
   sectionHeading: {
     fontSize: 17,
     fontWeight: '600',
     color: Colors.primary,
     fontFamily: 'serif',
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginTop: 2,
   },
   viewAllBtn: {
     flexDirection: 'row',
@@ -791,57 +792,69 @@ const stylesRecommendedSection = StyleSheet.create({
   // ─── Book Card ──────────────────────────────────────
   bookCard: {
     height: BOOK_CARD_HEIGHT,
-    borderRadius: 16,
+    borderRadius: 18,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: 'rgba(184, 149, 74, 0.22)',
     overflow: 'hidden',
     ...Shadows.soft,
   },
   bookCover: {
-    flex: 0.65,
-    justifyContent: 'flex-start',
-    padding: 10,
+    flex: 0.68,
+    padding: 8,
+  },
+  bookTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
   },
   bookCoverImage: {
-    borderTopLeftRadius: 15,
-    borderTopRightRadius: 15,
+    borderTopLeftRadius: 17,
+    borderTopRightRadius: 17,
   },
   bookBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: Colors.primary,
+    backgroundColor: 'rgba(255,255,255,0.92)',
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 4,
+    borderRadius: 999,
   },
   bookBadgeText: {
-    color: '#FFFFFF',
+    color: Colors.primary,
     fontSize: 9,
     fontWeight: '700',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
   bookInfo: {
-    flex: 0.35,
-    padding: 12,
-    justifyContent: 'space-between',
+    flex: 0.32,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: '#FFFcf7',
   },
   bookTitle: {
     fontSize: 14,
     fontWeight: '700',
     color: Colors.primary,
     fontFamily: 'serif',
-    lineHeight: 19,
-  },
-  bookFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    lineHeight: 18,
   },
   bookAuthor: {
-    fontSize: 10,
+    fontSize: 11,
     color: Colors.textSecondary,
-    flex: 1,
-    marginRight: 6,
+  },
+  saveBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F7F4EE',
+  },
+  saveBtnOnCover: {
+    alignSelf: 'flex-end',
+    backgroundColor: 'rgba(255,255,255,0.92)',
   },
 
   // ─── Article Column ─────────────────────────────────
@@ -858,54 +871,221 @@ const stylesRecommendedSection = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 13,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: Colors.border,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    borderColor: 'rgba(184, 149, 74, 0.22)',
+    paddingLeft: 6,
+    paddingRight: 8,
+    gap: 8,
     ...Shadows.soft,
   },
   articleTextCol: {
     flex: 1,
-    paddingRight: 6,
     justifyContent: 'center',
-  },
-  articleBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginBottom: 3,
-  },
-  articleBadgeText: {
-    color: '#4F6DC5',
-    fontSize: 8,
-    fontWeight: '700',
-    letterSpacing: 0.3,
+    gap: 2,
   },
   articleTitle: {
     fontSize: 12,
     fontWeight: '600',
     color: Colors.primary,
     lineHeight: 16,
-    marginBottom: 2,
   },
   articleMeta: {
     fontSize: 10,
     color: Colors.textSecondary,
   },
-  articleRightCol: {
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    height: '100%',
-    paddingVertical: 2,
-  },
   articleThumb: {
-    width: 44,
-    height: 44,
-    borderRadius: 6,
+    width: 46,
+    height: 46,
+    borderRadius: 10,
+    backgroundColor: '#E8EEF5',
   },
 });
 
 export const LetItGoCard = React.memo(LetItGoCardComponent);
+
+type ContinueItem = {
+  id: string;
+  type?: string;
+  title?: string;
+  author?: string | null;
+  coverUrl?: string | null;
+  fileUrl?: string | null;
+  description?: string | null;
+  readTime?: string | number | null;
+  page?: number;
+  totalPages?: number;
+};
+
+function JourneyCard({ item, onPress }: { item: ContinueItem; onPress: () => void }) {
+  const progress = item.page && item.totalPages ? Math.min(1, item.page / item.totalPages) : 0;
+  const percent = Math.round(progress * 100);
+  const cover = item.coverUrl
+    ? { uri: item.coverUrl }
+    : require('@/assets/images/mountain_bg.png');
+  return (
+    <TouchableOpacity
+      style={stylesContinue.card}
+      activeOpacity={0.8}
+      onPress={onPress}
+    >
+      <ImageBackground
+        source={cover}
+        style={stylesContinue.cover}
+        imageStyle={stylesContinue.coverImage}
+        contentFit="cover"
+      >
+        <LinearGradient
+          colors={['transparent', 'rgba(10, 24, 48, 0.88)']}
+          style={stylesContinue.overlay}
+        >
+          <Text style={stylesContinue.itemTitle} numberOfLines={2}>{item.title || 'Untitled'}</Text>
+          <View style={stylesContinue.progressRow}>
+            <View style={stylesContinue.track}>
+              <View style={[stylesContinue.fill, { width: `${percent}%` }]} />
+            </View>
+            <Text style={stylesContinue.percent}>{percent}%</Text>
+          </View>
+        </LinearGradient>
+      </ImageBackground>
+    </TouchableOpacity>
+  );
+}
+
+export function ContinueFromHere({
+  items,
+  onPress,
+  onViewAll,
+}: {
+  items: ContinueItem[];
+  onPress: (item: ContinueItem) => void;
+  onViewAll: () => void;
+}) {
+  return (
+    <View style={stylesContinue.section}>
+      <View style={stylesContinue.header}>
+        <View style={stylesContinue.headingGroup}>
+          <BookOpen color={Colors.accent} size={24} strokeWidth={2} />
+          <View style={stylesContinue.headingText}>
+            <Text style={stylesContinue.title} numberOfLines={1}>Continue Your Journey</Text>
+            <Text style={stylesContinue.subtitle}>Pick up where you left off.</Text>
+          </View>
+        </View>
+        <TouchableOpacity style={stylesContinue.viewAll} onPress={onViewAll} activeOpacity={0.7}>
+          <Text style={stylesContinue.viewAllText}>View all</Text>
+          <ChevronRight color={Colors.accent} size={14} strokeWidth={2} />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={stylesContinue.cardRow}
+      >
+        {items.map((item) => (
+          <JourneyCard key={item.id} item={item} onPress={() => onPress(item)} />
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+const stylesContinue = StyleSheet.create({
+  section: {
+    marginTop: -12,
+    marginBottom: Spacing.md,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+    gap: 12,
+  },
+  headingGroup: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginRight: 8,
+  },
+  headingText: {
+    flex: 1,
+  },
+  title: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: Colors.primary,
+    fontFamily: 'serif',
+  },
+  subtitle: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  viewAll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  viewAllText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#B8954A',
+  },
+  cardRow: {
+    paddingHorizontal: Spacing.lg,
+    gap: Spacing.md,
+  },
+  card: {
+    width: 160,
+    height: 180,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#E8EEF5',
+    ...Shadows.light,
+  },
+  cover: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'flex-end',
+  },
+  coverImage: {
+    borderRadius: 16,
+  },
+  overlay: {
+    paddingHorizontal: 12,
+    paddingTop: 36,
+    paddingBottom: 12,
+    gap: 8,
+  },
+  itemTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    lineHeight: 18,
+  },
+  progressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  track: {
+    flex: 1,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.35)',
+    overflow: 'hidden',
+  },
+  fill: {
+    height: '100%',
+    borderRadius: 2,
+    backgroundColor: '#E4C27A',
+  },
+  percent: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+});

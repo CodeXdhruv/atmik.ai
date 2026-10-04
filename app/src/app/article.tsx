@@ -3,7 +3,11 @@ import { View, StyleSheet, TouchableOpacity, Text, ScrollView, Dimensions, Keybo
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Clock, User } from 'lucide-react-native';
+import { ArrowLeft, Bookmark, Clock, User } from 'lucide-react-native';
+import { useAppStore } from '../store/useAppStore';
+import { apiService } from '../services/api';
+import { Colors } from '../constants/theme';
+import { rememberContinue } from '../services/continueReading';
 import RenderHTML from 'react-native-render-html';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -13,6 +17,8 @@ export default function ArticleScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { title, description, author, readTime } = params;
+  const contentId = Array.isArray(params.id) ? params.id[0] : params.id;
+  const isBookmarked = useAppStore(state => contentId ? state.bookmarks.includes(String(contentId)) : false);
 
   // Extract cover/thumbnail URL from all possible param fields sent by caller
   const rawCover = (params.coverUrl || params.thumbnailUrl || params.imageUrl || params.thumbnail || params.cover) as string | undefined;
@@ -25,7 +31,17 @@ export default function ArticleScreen() {
   // Dismiss any active keyboard when opening article
   useEffect(() => {
     Keyboard.dismiss();
-  }, []);
+    if (!contentId) return;
+    rememberContinue({
+      id: String(contentId),
+      type: 'ARTICLE',
+      title: String(title || 'Untitled'),
+      author: typeof author === 'string' ? author : undefined,
+      coverUrl: hasValidCover ? rawCover!.trim() : undefined,
+      description: typeof description === 'string' ? description : undefined,
+      readTime: typeof readTime === 'string' ? readTime : undefined,
+    });
+  }, [contentId]);
 
   const rawHtml = typeof description === 'string' && description.trim() !== ''
     ? description
@@ -94,9 +110,27 @@ export default function ArticleScreen() {
             style={styles.gradient}
           >
             <SafeAreaView edges={['top']} style={styles.safeAreaTop}>
-              <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                <ArrowLeft color="#FFF" size={24} />
-              </TouchableOpacity>
+              <View style={styles.headerActions}>
+                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                  <ArrowLeft color="#FFF" size={24} />
+                </TouchableOpacity>
+                {contentId ? (
+                  <TouchableOpacity
+                    onPress={() => {
+                      useAppStore.getState().toggleBookmarkLocal(String(contentId));
+                      apiService.toggleBookmark(String(contentId));
+                    }}
+                    style={styles.backButton}
+                  >
+                    <Bookmark
+                      color="#FFF"
+                      fill={isBookmarked ? Colors.accent : 'transparent'}
+                      size={20}
+                      strokeWidth={1.75}
+                    />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
             </SafeAreaView>
 
             <View style={styles.headerContent}>
@@ -148,6 +182,11 @@ const styles = StyleSheet.create({
   safeAreaTop: {
     paddingHorizontal: 16,
     paddingTop: 8,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   backButton: {
     width: 44,

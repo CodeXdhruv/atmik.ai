@@ -5,7 +5,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from
 import { Image, ImageBackground } from 'expo-image';
 import Animated, { FadeInDown, FadeOutUp, Layout } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { 
   Search, LayoutGrid, Book, FileText, Quote as QuoteIcon, Bookmark, ChevronLeft, ChevronRight, 
   Users, ArrowRight, Folder, Sparkles, Aperture, Atom, Wind, Droplet, Feather, Flame, Waves, 
@@ -16,12 +16,11 @@ import {
 import { Colors, Spacing, Radius, Shadows } from '@/constants/theme';
 import { apiService } from '../../services/api';
 import * as Linking from 'expo-linking';
-import { useRouter } from 'expo-router';
 import { useAppStore } from '../../store/useAppStore';
 
 const { width } = Dimensions.get('window');
 
-function uniqueThemes(categories: any[]) {
+export function uniqueThemes(categories: any[]) {
   const seen = new Set<string>();
   const themes: { id: string; label: string; icon: React.ElementType }[] = [];
   for (const cat of categories || []) {
@@ -95,6 +94,7 @@ function getCategoryIcon(iconName?: string, categoryName?: string): React.Elemen
 
 export default function LearnScreen() {
   const router = useRouter();
+  const { theme: themeParam } = useLocalSearchParams<{ theme?: string }>();
   const [activeCategory, setActiveCategory] = useState('all');
   const [categories] = useState<any[]>(DEFAULT_CATEGORIES);
   const [themes, setThemes] = useState<any[]>([]);
@@ -147,6 +147,11 @@ export default function LearnScreen() {
       loadData();
     }, [loadData])
   );
+
+  React.useEffect(() => {
+    const name = Array.isArray(themeParam) ? themeParam[0] : themeParam;
+    if (name) setActiveTheme(String(name));
+  }, [themeParam]);
 
   const filteredContent = libraryContent.filter((item) => {
     if (activeCategory === 'all') return true;
@@ -258,12 +263,12 @@ export default function LearnScreen() {
                        if (item.fileUrl) {
                         const contentType = item.type?.toUpperCase();
                         if (contentType === 'BOOK') {
-                          router.push({ pathname: '/reader', params: { url: item.fileUrl, title: item.title } });
+                          router.push({ pathname: '/reader', params: { id: item.id, url: item.fileUrl, title: item.title } });
                         } else if (contentType === 'ARTICLE') {
                           router.push({ 
                             pathname: '/article', 
                             params: { 
-                              title: item.title, 
+                              id: item.id, title: item.title, 
                               description: item.description, 
                               coverUrl: item.coverUrl || (item as any).thumbnailUrl || (item as any).imageUrl || '', 
                               author: item.author, 
@@ -379,12 +384,12 @@ export default function LearnScreen() {
                        if (item.fileUrl) {
                         const contentType = item.type?.toUpperCase();
                         if (contentType === 'BOOK') {
-                          router.push({ pathname: '/reader', params: { url: item.fileUrl, title: item.title } });
+                          router.push({ pathname: '/reader', params: { id: item.id, url: item.fileUrl, title: item.title } });
                         } else if (contentType === 'ARTICLE') {
                           router.push({
                             pathname: '/article',
                             params: {
-                              title: item.title,
+                              id: item.id, title: item.title,
                               description: item.description,
                               coverUrl: item.coverUrl || (item as any).thumbnailUrl || (item as any).imageUrl || '',
                               author: item.author,
@@ -502,12 +507,12 @@ export default function LearnScreen() {
                        if (item.fileUrl) {
                         const contentType = item.type?.toUpperCase();
                         if (contentType === 'BOOK') {
-                          router.push({ pathname: '/reader', params: { url: item.fileUrl, title: item.title } });
+                          router.push({ pathname: '/reader', params: { id: item.id, url: item.fileUrl, title: item.title } });
                         } else if (contentType === 'ARTICLE') {
                           router.push({ 
                             pathname: '/article', 
                             params: { 
-                              title: item.title, 
+                              id: item.id, title: item.title, 
                               description: item.description, 
                               coverUrl: item.coverUrl || (item as any).thumbnailUrl || (item as any).imageUrl || '', 
                               author: item.author, 

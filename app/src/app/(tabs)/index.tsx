@@ -11,7 +11,8 @@ import { usePracticeStore } from '../../store/usePracticeStore';
 import { useAppStore } from '../../store/useAppStore';
 import { apiService } from '../../services/api';
 import * as Linking from 'expo-linking';
-import { RecommendedSection, LetItGoCard } from '@/components/home/HomeComponents';
+import { ContinueFromHere, LetItGoCard } from '@/components/home/HomeComponents';
+import { getContinueReading, ContinueReading } from '../../services/continueReading';
 import auth from '@react-native-firebase/auth';
 
 
@@ -88,6 +89,7 @@ export default function HomeScreen() {
   const greetingText = firstName ? `Welcome back, ${firstName}!` : 'Welcome back!';
 
   const [recommendedContent, setRecommendedContent] = useState<any[]>([]);
+  const [savedReading, setSavedReading] = useState<ContinueReading[]>([]);
   const [todaysForYouData, setTodaysForYouData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -164,8 +166,61 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       loadHomeData(false);
+      getContinueReading().then(setSavedReading).catch(() => {});
     }, [loadHomeData])
   );
+
+  const continueItems = React.useMemo(() => {
+    const enrich = (saved: ContinueReading) => {
+      const match = recommendedContent.find((item) => item.id === saved.id);
+      return {
+        ...match,
+        ...saved,
+        title: match?.title || saved.title,
+        author: match?.author || saved.author,
+        coverUrl: match?.coverUrl || saved.coverUrl,
+        fileUrl: match?.fileUrl || saved.fileUrl,
+        description: match?.description || saved.description,
+        readTime: match?.readTime || saved.readTime,
+        type: saved.type || match?.type,
+      };
+    };
+    if (savedReading.length > 0) return savedReading.map(enrich);
+    const book = recommendedContent.find((item) => String(item.type).toUpperCase() === 'BOOK');
+    const starter = book || recommendedContent[0];
+    return starter ? [starter] : [];
+  }, [savedReading, recommendedContent]);
+
+  const openContinue = (continueItem: ContinueReading) => {
+    const kind = String(continueItem.type || '').toUpperCase();
+    if (kind === 'BOOK' && continueItem.fileUrl) {
+      router.push({
+        pathname: '/reader',
+        params: {
+          id: continueItem.id,
+          url: continueItem.fileUrl,
+          title: continueItem.title,
+          page: continueItem.page ? String(continueItem.page) : '1',
+        },
+      });
+      return;
+    }
+    if (continueItem.fileUrl && continueItem.fileUrl !== 'text-only' && kind !== 'ARTICLE') {
+      Linking.openURL(continueItem.fileUrl);
+      return;
+    }
+    router.push({
+      pathname: '/article',
+      params: {
+        id: continueItem.id,
+        title: continueItem.title,
+        description: continueItem.description,
+        coverUrl: continueItem.coverUrl || '',
+        author: continueItem.author,
+        readTime: continueItem.readTime,
+      },
+    });
+  };
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -210,49 +265,20 @@ export default function HomeScreen() {
           <LetItGoCard experienceData={todaysForYouData} />
         </View>
 
-        {/* Recommended for You */}
-        
         {isLoading && (
-          <View style={{ paddingHorizontal: 22, marginTop: 20 }}>
+          <View style={{ paddingHorizontal: 22, marginTop: 8, gap: 14 }}>
              <Skeleton colorMode="light" height={24} width={180} radius={4} />
-             <View style={{ flexDirection: 'row', marginTop: 16, gap: 12 }}>
-               <Skeleton colorMode="light" height={240} width={(Dimensions.get('window').width - 44) * 0.42} radius={16} />
-               <View style={{ flex: 1, gap: 7, justifyContent: 'space-between' }}>
-                 <Skeleton colorMode="light" height={75} width="100%" radius={13} />
-                 <Skeleton colorMode="light" height={75} width="100%" radius={13} />
-                 <Skeleton colorMode="light" height={75} width="100%" radius={13} />
-               </View>
-             </View>
+             <Skeleton colorMode="light" height={72} width="100%" radius={16} />
           </View>
         )}
 
-
-        {!isLoading && <RecommendedSection
-          content={recommendedContent}
-          onViewAll={() => router.push('/(tabs)/learn')}
-          onPressBook={(item) => {
-            if (item.fileUrl) {
-              router.push({ pathname: '/reader', params: { url: item.fileUrl, title: item.title } });
-            }
-          }}
-          onPressArticle={(item) => {
-            if (item.fileUrl && item.fileUrl !== 'text-only') {
-              Linking.openURL(item.fileUrl);
-            } else {
-              router.push({
-                pathname: '/article',
-                params: { 
-                  title: item.title, 
-                  description: item.description, 
-                  coverUrl: item.coverUrl || (item as any).thumbnailUrl || (item as any).imageUrl || '', 
-                  author: item.author, 
-                  readTime: item.readTime 
-                },
-              });
-            }
-          }}
-        />
-        }
+        {!isLoading && continueItems.length > 0 && (
+          <ContinueFromHere
+            items={continueItems}
+            onPress={openContinue}
+            onViewAll={() => router.push('/(tabs)/learn')}
+          />
+        )}
 
       </ScrollView>
 
@@ -268,7 +294,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingTop: 10,
-    paddingBottom: 140, // Space for Bottom Tab
+    paddingBottom: 200,
   },
   header: {
     flexDirection: 'row',
