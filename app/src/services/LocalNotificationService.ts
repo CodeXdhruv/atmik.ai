@@ -1,6 +1,40 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
+const MORNING_COPY = [
+  {
+    title: 'Before the world gets loud',
+    body: 'One quiet minute with Atmik. Name what today is for, then step into it.',
+  },
+  {
+    title: 'The day is still yours',
+    body: 'Tell Atmik the one thing that matters today. Leave the rest outside.',
+  },
+  {
+    title: 'Start from the inside',
+    body: 'A short talk with Atmik now. Clear the mind before the day fills it.',
+  },
+];
+
+const EVENING_COPY = [
+  {
+    title: 'Put the day down',
+    body: 'Say what you carried all day. Atmik is here to listen.',
+  },
+  {
+    title: 'The day is over. You are not.',
+    body: 'Speak it out loud. A gentle voice talk with Atmik, just you two.',
+  },
+  {
+    title: 'Something is still unspoken',
+    body: 'Come sit with Atmik. Leave the day in words, not in your chest.',
+  },
+];
+
+function pick<T>(items: T[]): T {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
 export class LocalNotificationService {
   static async requestPermissions() {
     if (Platform.OS === 'android') {
@@ -20,10 +54,11 @@ export class LocalNotificationService {
     const hasPermission = await this.requestPermissions();
     if (!hasPermission) return;
 
+    const morning = pick(MORNING_COPY);
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: '☀️ Start Your Morning with Atmik AI',
-        body: 'Set your intention for today. Have a quick voice or text conversation with Atmik AI to clear your mind!',
+        title: morning.title,
+        body: morning.body,
         sound: true,
         data: { route: '/chat', type: 'CHAT_ALIGNMENT' }
       },
@@ -36,36 +71,16 @@ export class LocalNotificationService {
     console.log('Scheduled morning alignment notification for 8:30 AM');
   }
 
-  // 2. Afternoon Inner Check-In (1:30 PM) -> Reflect Your Inner Self (Practice)
-  static async scheduleAfternoonReflection() {
-    const hasPermission = await this.requestPermissions();
-    if (!hasPermission) return;
-
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: '🧘 Reflect Your Inner Self',
-        body: 'Pause for 2 minutes. Take a deep breath and explore your inner journey in Practice to realign your peace.',
-        sound: true,
-        data: { route: '/health', type: 'REFLECT_INNER_SELF' }
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DAILY,
-        hour: 13,
-        minute: 30,
-      },
-    });
-    console.log('Scheduled afternoon reflection notification for 1:30 PM');
-  }
-
-  // 3. Evening Heart-to-Heart Voice Chat (6:30 PM) -> Voice Mode
+  // 2. Evening Heart-to-Heart Voice Chat (6:30 PM) -> Voice Mode
   static async scheduleEveningVoiceChat() {
     const hasPermission = await this.requestPermissions();
     if (!hasPermission) return;
 
+    const evening = pick(EVENING_COPY);
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: '🎙️ Atmik AI is Listening',
-        body: 'How was your day? Speak your heart out in a gentle 1-on-1 voice conversation with Atmik.',
+        title: evening.title,
+        body: evening.body,
         sound: true,
         data: { route: '/voice', type: 'VOICE_CHAT' }
       },
@@ -78,34 +93,11 @@ export class LocalNotificationService {
     console.log('Scheduled evening voice chat notification for 6:30 PM');
   }
 
-  // 4. Nightly Peaceful Unwind (9:30 PM) -> Daily Reflection
-  static async scheduleNightlyUnwind() {
-    const hasPermission = await this.requestPermissions();
-    if (!hasPermission) return;
-
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: '🌙 Evening Inner Peace & Reflections',
-        body: 'Before you sleep, reflect on your thoughts and gain clarity with today’s inner reflection.',
-        sound: true,
-        data: { route: '/health', type: 'NIGHTLY_REFLECTION' }
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DAILY,
-        hour: 21,
-        minute: 30,
-      },
-    });
-    console.log('Scheduled nightly unwind notification for 9:30 PM');
-  }
-
   static async setupAllLocalReminders() {
     // Clear all existing scheduled notifications so we don't duplicate
     await Notifications.cancelAllScheduledNotificationsAsync();
-    
+
     await this.scheduleMorningAlignment();
-    await this.scheduleAfternoonReflection();
     await this.scheduleEveningVoiceChat();
-    await this.scheduleNightlyUnwind();
   }
 }
