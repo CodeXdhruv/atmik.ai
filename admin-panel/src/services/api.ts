@@ -28,7 +28,7 @@ export const apiService = {
   /**
    * Save content metadata to Cloudflare D1 Database
    */
-  async saveContentMetadata(data: { title: string; type: string; coverUrl?: string; fileUrl: string; description?: string; author?: string; readTime?: number; category?: string }): Promise<void> {
+  async saveContentMetadata(data: { title: string; type: string; coverUrl?: string; fileUrl: string; description?: string; subtitle?: string; author?: string; readTime?: number; category?: string; featured?: boolean; publishAt?: string | null }): Promise<void> {
     const response = await fetch(`${API_BASE_URL}/api/library/content`, {
       method: 'POST',
       headers: await getAuthHeaders(),
@@ -43,7 +43,7 @@ export const apiService = {
   /**
    * Update content metadata in Cloudflare D1 Database
    */
-  async updateContentMetadata(id: string, data: { title: string; type?: string; coverUrl?: string; fileUrl?: string; description?: string; author?: string; readTime?: number; category?: string }): Promise<void> {
+  async updateContentMetadata(id: string, data: { title: string; type?: string; coverUrl?: string; fileUrl?: string; description?: string; subtitle?: string; author?: string; readTime?: number; category?: string; featured?: boolean; publishAt?: string | null }): Promise<void> {
     const response = await fetch(`${API_BASE_URL}/api/library/content/${id}`, {
       method: 'PUT',
       headers: await getAuthHeaders(),

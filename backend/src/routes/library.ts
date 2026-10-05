@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { Bindings } from '../types/env';
 
 import { assertAdmin, authenticate } from '../utils/auth';
+import { isFuturePublish, notifyContentPublished, notifyContentUpdated } from '../lib/publishContent';
 
 const library = new Hono<{ Bindings: Bindings, Variables: { user: any } }>();
 
@@ -84,7 +85,7 @@ library.get('/file/:fileKey', async (c) => {
 // Saves the uploaded media metadata to D1
 library.post('/content', async (c) => {
   try {
-    const { title, type, coverUrl, fileUrl, description, author, readTime, category } = await c.req.json();
+    const { title, type, coverUrl, fileUrl, description, subtitle, author, readTime, category, featured, publishAt } = await c.req.json();
     
     if (!title || !type || !fileUrl) {
       return c.json({ error: 'Missing required fields' }, 400);
@@ -94,44 +95,15 @@ library.post('/content', async (c) => {
     const createdAt = new Date().toISOString();
 
     await c.env.DB.prepare(
-      'INSERT INTO Content (id, title, type, coverUrl, fileUrl, createdAt, description, author, readTime, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).bind(id, title, type, coverUrl || null, fileUrl, createdAt, description || null, author || null, readTime || null, category || null).run();
+      'INSERT INTO Content (id, title, type, coverUrl, fileUrl, createdAt, description, subtitle, author, readTime, category, featured, publishAt, publishNotified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).bind(id, title, type, coverUrl || null, fileUrl, createdAt, description || null, subtitle || null, author || null, readTime || null, category || null, featured ? 1 : 0, publishAt || null, isFuturePublish(publishAt) ? 0 : 1).run();
 
-    // Trigger Push Notification automatically
-    try {
-      const { results } = await c.env.DB.prepare('SELECT pushToken FROM User WHERE pushToken IS NOT NULL').all();
-      const tokens = results.map((r: any) => r.pushToken).filter(Boolean);
-
-      if (tokens.length > 0) {
-        const notifTitle = 'New Content Available!';
-        const notifBody = `${title} is now available in the library.`;
-        const notificationId = crypto.randomUUID();
-
-        // Save to Notification inbox
-        await c.env.DB.prepare(
-          'INSERT INTO Notification (id, userId, title, body, type, createdAt) VALUES (?, NULL, ?, ?, ?, ?)'
-        ).bind(notificationId, notifTitle, notifBody, 'CONTENT', new Date().toISOString()).run();
-
-        const messages = tokens.map(token => ({
-          to: token,
-          sound: 'default',
-          title: notifTitle,
-          body: notifBody,
-          data: { type: 'CONTENT', id: notificationId, contentId: id, route: '/health' },
-        }));
-
-        await fetch('https://exp.host/--/api/v2/push/send', {
-          method: 'POST',
-          headers: {
-            'Accept': 'application/json',
-            'Accept-encoding': 'gzip, deflate',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(messages),
-        });
+    if (!isFuturePublish(publishAt)) {
+      try {
+        await notifyContentPublished(c.env, title, id);
+      } catch (e) {
+        console.error('Failed to send automatic notification:', e);
       }
-    } catch (e) {
-      console.error('Failed to send automatic notification:', e);
     }
 
     return c.json({ success: true, message: 'Content added successfully', id }, 201);
@@ -145,7 +117,7 @@ library.post('/content', async (c) => {
 library.put('/content/:id', async (c) => {
   try {
     const id = c.req.param('id');
-    const { title, type, coverUrl, fileUrl, description, author, readTime, category } = await c.req.json();
+    const { title, type, coverUrl, fileUrl, description, subtitle, author, readTime, category, featured, publishAt } = await c.req.json();
 
     if (!title) {
       return c.json({ error: 'Title is required' }, 400);
@@ -158,9 +130,13 @@ library.put('/content/:id', async (c) => {
            coverUrl = COALESCE(?, coverUrl),
            fileUrl = COALESCE(?, fileUrl),
            description = COALESCE(?, description),
+           subtitle = COALESCE(?, subtitle),
            author = COALESCE(?, author),
            readTime = COALESCE(?, readTime),
-           category = COALESCE(?, category)
+           category = COALESCE(?, category),
+           featured = COALESCE(?, featured),
+           publishAt = ?,
+           publishNotified = ?
        WHERE id = ?`
     ).bind(
       title || null,
@@ -168,47 +144,22 @@ library.put('/content/:id', async (c) => {
       coverUrl || null,
       fileUrl || null,
       description || null,
+      subtitle || null,
       author || null,
       readTime || null,
       category || null,
+      featured === undefined || featured === null ? null : (featured ? 1 : 0),
+      publishAt || null,
+      isFuturePublish(publishAt) ? 0 : 1,
       id
     ).run();
 
-    // Trigger Push Notification automatically for Library Update
-    try {
-      const { results } = await c.env.DB.prepare('SELECT pushToken FROM User WHERE pushToken IS NOT NULL').all();
-      const tokens = results.map((r: any) => r.pushToken).filter(Boolean);
-
-      if (tokens.length > 0) {
-        const notifTitle = 'Library Content Updated!';
-        const notifBody = `"${title}" has been updated in the library. Tap to view!`;
-        const notificationId = crypto.randomUUID();
-
-        // Save to Notification inbox in D1
-        await c.env.DB.prepare(
-          'INSERT INTO Notification (id, userId, title, body, type, createdAt) VALUES (?, NULL, ?, ?, ?, ?)'
-        ).bind(notificationId, notifTitle, notifBody, 'CONTENT_UPDATE', new Date().toISOString()).run();
-
-        const messages = tokens.map(token => ({
-          to: token,
-          sound: 'default',
-          title: notifTitle,
-          body: notifBody,
-          data: { type: 'CONTENT_UPDATE', id: notificationId, contentId: id, route: '/health' },
-        }));
-
-        await fetch('https://exp.host/--/api/v2/push/send', {
-          method: 'POST',
-          headers: {
-            'Accept': 'application/json',
-            'Accept-encoding': 'gzip, deflate',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(messages),
-        });
+    if (!isFuturePublish(publishAt)) {
+      try {
+        await notifyContentUpdated(c.env, title, id);
+      } catch (e) {
+        console.error('Failed to send automatic update notification:', e);
       }
-    } catch (e) {
-      console.error('Failed to send automatic update notification:', e);
     }
 
     return c.json({ success: true, message: 'Content updated successfully', id });
@@ -231,7 +182,16 @@ library.delete('/content/:id', async (c) => {
 // GET /api/library/content
 library.get('/content', async (c) => {
   try {
-    const { results } = await c.env.DB.prepare('SELECT * FROM Content ORDER BY createdAt DESC').all();
+    const user = c.get('user');
+    const roleRow = await c.env.DB.prepare('SELECT role FROM User WHERE firebaseUid = ?')
+      .bind(user?.sub)
+      .first() as { role: string } | null;
+    const now = new Date().toISOString();
+    const { results } = roleRow?.role === 'ADMIN'
+      ? await c.env.DB.prepare('SELECT * FROM Content ORDER BY createdAt DESC').all()
+      : await c.env.DB.prepare(
+          'SELECT * FROM Content WHERE publishAt IS NULL OR publishAt <= ? ORDER BY createdAt DESC'
+        ).bind(now).all();
     return c.json({ success: true, data: results });
   } catch (error: any) {
     return c.json({ error: error.message }, 500);

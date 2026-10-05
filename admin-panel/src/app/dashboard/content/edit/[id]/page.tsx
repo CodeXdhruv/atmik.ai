@@ -47,6 +47,8 @@ export default function EditContentPage({ params }: { params: Promise<{ id: stri
   const [quoteText, setQuoteText] = useState("");
   const [featured, setFeatured] = useState(false);
   const [schedulePublish, setSchedulePublish] = useState(false);
+  const [publishDate, setPublishDate] = useState("");
+  const [publishTime, setPublishTime] = useState("");
   const [status, setStatus] = useState<"Draft" | "Published" | "Archived">("Draft");
 
   // File Upload State
@@ -67,6 +69,17 @@ export default function EditContentPage({ params }: { params: Promise<{ id: stri
       setQuoteText(existingItem.quoteText || "");
       setFeatured(existingItem.featured);
       setStatus(existingItem.status);
+      if (existingItem.publishAt && new Date(existingItem.publishAt).getTime() > Date.now()) {
+        const when = new Date(existingItem.publishAt);
+        const pad = (value: number) => String(value).padStart(2, "0");
+        setSchedulePublish(true);
+        setPublishDate(`${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}`);
+        setPublishTime(`${pad(when.getHours())}:${pad(when.getMinutes())}`);
+      } else {
+        setSchedulePublish(false);
+        setPublishDate("");
+        setPublishTime("");
+      }
       
       setThumbnail({
         name: existingItem.thumbnail.split("/").pop() || "thumbnail.jpg",
@@ -105,6 +118,20 @@ export default function EditContentPage({ params }: { params: Promise<{ id: stri
       return;
     }
 
+    let publishAt: string | null = null;
+    if (schedulePublish) {
+      if (!publishDate || !publishTime) {
+        toast.error("Choose a publish date and time.");
+        return;
+      }
+      const when = new Date(`${publishDate}T${publishTime}`);
+      if (Number.isNaN(when.getTime())) {
+        toast.error("Choose a valid publish date and time.");
+        return;
+      }
+      publishAt = when.toISOString();
+    }
+
     try {
       await apiService.updateContentMetadata(id, {
         title,
@@ -112,9 +139,12 @@ export default function EditContentPage({ params }: { params: Promise<{ id: stri
         coverUrl: thumbnail?.url,
         fileUrl: pdfFile?.url || "text-only",
         description,
+        subtitle,
         author,
         readTime: 5,
-        category
+        category,
+        featured,
+        publishAt
       });
 
       updateContentItem(id, {
@@ -127,6 +157,7 @@ export default function EditContentPage({ params }: { params: Promise<{ id: stri
         category,
         tags: selectedTags,
         featured,
+        publishAt,
         description,
         thumbnail: thumbnail?.url || "",
         fileUrl: pdfFile?.url,
@@ -391,6 +422,8 @@ export default function EditContentPage({ params }: { params: Promise<{ id: stri
                   </label>
                   <input
                     type="date"
+                    value={publishDate}
+                    onChange={(e) => setPublishDate(e.target.value)}
                     className="w-full px-3 py-2 bg-background border border-border-custom rounded-input text-xs text-primary-navy cursor-pointer outline-none"
                   />
                 </div>
@@ -400,6 +433,8 @@ export default function EditContentPage({ params }: { params: Promise<{ id: stri
                   </label>
                   <input
                     type="time"
+                    value={publishTime}
+                    onChange={(e) => setPublishTime(e.target.value)}
                     className="w-full px-3 py-2 bg-background border border-border-custom rounded-input text-xs text-primary-navy cursor-pointer outline-none"
                   />
                 </div>

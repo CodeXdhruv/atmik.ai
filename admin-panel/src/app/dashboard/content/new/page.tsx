@@ -50,6 +50,8 @@ export default function AddContentPage() {
   const [quoteText, setQuoteText] = useState("");
   const [featured, setFeatured] = useState(true);
   const [schedulePublish, setSchedulePublish] = useState(false);
+  const [publishDate, setPublishDate] = useState("");
+  const [publishTime, setPublishTime] = useState("");
   const [status, setStatus] = useState<"Draft" | "Published" | "Archived">("Published");
 
   // File Upload State
@@ -72,6 +74,20 @@ export default function AddContentPage() {
       return;
     }
 
+    let publishAt: string | null = null;
+    if (!isDraft && schedulePublish) {
+      if (!publishDate || !publishTime) {
+        toast.error("Choose a publish date and time.");
+        return;
+      }
+      const when = new Date(`${publishDate}T${publishTime}`);
+      if (Number.isNaN(when.getTime())) {
+        toast.error("Choose a valid publish date and time.");
+        return;
+      }
+      publishAt = when.toISOString();
+    }
+
     try {
       // 1. Save to Cloudflare D1
       if (!isDraft) {
@@ -81,9 +97,12 @@ export default function AddContentPage() {
           coverUrl: thumbnail?.url,
           fileUrl: pdfFile?.url || "text-only",
           description,
+          subtitle,
           author,
           readTime: 5, // Default for now
-          category
+          category,
+          featured,
+          publishAt
         });
       }
 
@@ -99,6 +118,7 @@ export default function AddContentPage() {
         category,
         tags: selectedTags,
         featured,
+        publishAt,
         quoteText: type === "Book" ? quoteText : undefined,
         description,
         thumbnail: thumbnail?.url || "/mock/placeholder.jpg",
@@ -107,7 +127,7 @@ export default function AddContentPage() {
         fileSize: pdfFile?.size
       });
 
-      toast.success(isDraft ? "Draft saved successfully!" : "Content published successfully to Cloudflare D1!");
+      toast.success(isDraft ? "Draft saved successfully!" : publishAt ? "Content scheduled." : "Content published successfully to Cloudflare D1!");
       router.push("/dashboard/content");
     } catch (error) {
       console.error("Failed to save content to backend:", error);
@@ -351,6 +371,8 @@ export default function AddContentPage() {
                   </label>
                   <input
                     type="date"
+                    value={publishDate}
+                    onChange={(e) => setPublishDate(e.target.value)}
                     className="w-full px-3 py-2 bg-background border border-border-custom rounded-input text-xs text-primary-navy font-ui cursor-pointer outline-none"
                   />
                 </div>
@@ -360,6 +382,8 @@ export default function AddContentPage() {
                   </label>
                   <input
                     type="time"
+                    value={publishTime}
+                    onChange={(e) => setPublishTime(e.target.value)}
                     className="w-full px-3 py-2 bg-background border border-border-custom rounded-input text-xs text-primary-navy font-ui cursor-pointer outline-none"
                   />
                 </div>

@@ -120,7 +120,7 @@ export const useAdminStore = create<AdminState>((set, get) => ({
       const mapped = data.map((item: any) => ({
         id: item.id,
         title: item.title,
-        subtitle: item.description || '', // mapped from description if subtitle is not available
+        subtitle: item.subtitle || '',
         slug: item.id, // Or generate slug
         type: item.type,
         author: item.author || 'Dr. Atmik Jain',
@@ -131,7 +131,8 @@ export const useAdminStore = create<AdminState>((set, get) => ({
         language: 'English',
         category: 'Uncategorized',
         tags: [],
-        featured: false,
+        featured: item.featured === true || item.featured === 1 || item.featured === '1',
+        publishAt: item.publishAt || null,
         date: new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
         thumbnail: item.coverUrl || '',
         fileUrl: item.fileUrl,

@@ -37,7 +37,7 @@ export function uniqueThemes(categories: any[]) {
   return themes;
 }
 
-function captionText(description: string | null | undefined, fallback: string) {
+function captionText(description: string | null | undefined, fallback = '') {
   const plain = (description || '')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/gi, ' ')
@@ -160,8 +160,10 @@ export default function LearnScreen() {
     return item.type?.toLowerCase() === activeCategory;
   });
 
-  const featuredItems = activeCategory === 'all' ? filteredContent.slice(0, Math.min(3, filteredContent.length)) : [];
-  const curatedItems = activeCategory === 'all' ? filteredContent.slice(featuredItems.length) : filteredContent;
+  const isFeatured = (item: { featured?: boolean | number | string }) =>
+    item.featured === true || item.featured === 1 || item.featured === '1';
+  const featuredItems = activeCategory === 'all' ? filteredContent.filter(isFeatured) : [];
+  const curatedItems = activeCategory === 'all' ? filteredContent.filter((item) => !isFeatured(item)) : filteredContent;
 
   const activeThemeItems = libraryContent.filter((item) => {
     const matchesTheme = item.category === activeTheme;
@@ -308,7 +310,7 @@ export default function LearnScreen() {
                         
                         <View style={styles.featuredMainContent}>
                           <Text style={styles.featuredTitle} numberOfLines={2}>{item.title}</Text>
-                          <Text style={styles.featuredDesc} numberOfLines={2}>{captionText(item.description, `Explore this ${item.type?.toLowerCase() || 'content'} in our library.`)}</Text>
+                          <Text style={styles.featuredDesc} numberOfLines={2}>{captionText(item.subtitle || item.description)}</Text>
                           
                           <View style={styles.featuredBottomRow}>
                             <View style={styles.exploreButton}>
@@ -435,7 +437,7 @@ export default function LearnScreen() {
                     </ImageBackground>
                     <View style={styles.curatedContent}>
                       <Text style={styles.curatedItemTitle} numberOfLines={1}>{item.title}</Text>
-                      <Text style={styles.curatedItemSubtitle} numberOfLines={2}>{captionText(item.description, `Explore this ${item.type?.toLowerCase() || 'item'}.`)}</Text>
+                      <Text style={styles.curatedItemSubtitle} numberOfLines={2}>{captionText(item.subtitle || item.description)}</Text>
                     </View>
                   </TouchableOpacity>
                 )}
@@ -585,7 +587,7 @@ export default function LearnScreen() {
                     )}
                     <View style={styles.curatedContent}>
                       <Text style={styles.curatedItemTitle} numberOfLines={1}>{item.title}</Text>
-                      <Text style={styles.curatedItemSubtitle} numberOfLines={2}>{captionText(item.description, `Explore this ${item.type?.toLowerCase() || 'item'}.`)}</Text>
+                      <Text style={styles.curatedItemSubtitle} numberOfLines={2}>{captionText(item.subtitle || item.description)}</Text>
                     </View>
                   </TouchableOpacity>
                 ))}

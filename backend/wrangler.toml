@@ -33,3 +33,6 @@ TTS_ENDPOINT = "https://dr-swatantra-ai.onrender.com/speech/v1/tts"
 
 [observability.logs]
 enabled = true
+
+[triggers]
+crons = ["* * * * *"]

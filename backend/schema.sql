@@ -16,9 +16,13 @@ CREATE TABLE IF NOT EXISTS Content (
     fileUrl TEXT NOT NULL,
     createdAt TEXT NOT NULL,
     author TEXT,
+    subtitle TEXT,
     description TEXT,
     readTime INTEGER,
-    category TEXT
+    category TEXT,
+    featured INTEGER NOT NULL DEFAULT 0,
+    publishAt TEXT,
+    publishNotified INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS Category (

@@ -13,6 +13,7 @@ export interface ContentItem {
   category: string;
   tags: string[];
   featured: boolean;
+  publishAt?: string | null;
   date: string;
   readingTime?: string;
   duration?: string;

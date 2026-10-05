@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { Bindings } from './types/env';
+import { publishDueContent } from './lib/publishContent';
 
 // Import routes
 import authRoutes from './routes/auth';
@@ -170,4 +171,9 @@ app.onError((err, c) => {
   return c.json({ error: 'Internal Server Error' }, 500);
 });
 
-export default app;
+export default {
+  fetch: app.fetch,
+  async scheduled(_event: ScheduledEvent, env: Bindings, ctx: ExecutionContext) {
+    ctx.waitUntil(publishDueContent(env));
+  },
+};
