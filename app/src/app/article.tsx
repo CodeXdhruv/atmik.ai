@@ -7,7 +7,7 @@ import { ArrowLeft, Bookmark, Clock, User } from 'lucide-react-native';
 import { useAppStore } from '../store/useAppStore';
 import { apiService } from '../services/api';
 import { Colors } from '../constants/theme';
-import { rememberContinue } from '../services/continueReading';
+import { completeContinue, rememberContinue } from '../services/continueReading';
 import RenderHTML from 'react-native-render-html';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -159,6 +159,18 @@ export default function ArticleScreen() {
             source={{ html: htmlContent }}
             tagsStyles={tagsStyles as any}
           />
+          {contentId ? (
+            <TouchableOpacity
+              style={styles.completeButton}
+              activeOpacity={0.85}
+              onPress={async () => {
+                await completeContinue(String(contentId));
+                router.back();
+              }}
+            >
+              <Text style={styles.completeButtonText}>Mark as completed</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       </ScrollView>
     </View>
@@ -240,5 +252,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 32,
     paddingBottom: 80,
+  },
+  completeButton: {
+    marginTop: 12,
+    backgroundColor: '#0A2540',
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  completeButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

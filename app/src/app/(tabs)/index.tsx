@@ -185,10 +185,7 @@ export default function HomeScreen() {
         type: saved.type || match?.type,
       };
     };
-    if (savedReading.length > 0) return savedReading.map(enrich);
-    const book = recommendedContent.find((item) => String(item.type).toUpperCase() === 'BOOK');
-    const starter = book || recommendedContent[0];
-    return starter ? [starter] : [];
+    return savedReading.map(enrich);
   }, [savedReading, recommendedContent]);
 
   const openContinue = (continueItem: ContinueReading) => {

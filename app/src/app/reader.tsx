@@ -6,7 +6,7 @@ import { ArrowLeft, Bookmark } from 'lucide-react-native';
 import { useAppStore } from '../store/useAppStore';
 import { apiService } from '../services/api';
 import { Colors } from '../constants/theme';
-import { rememberContinue } from '../services/continueReading';
+import { completeContinue, rememberContinue } from '../services/continueReading';
 import Pdf from 'react-native-pdf';
 import * as FileSystem from 'expo-file-system/legacy';
 
@@ -22,6 +22,8 @@ export default function BookReaderScreen() {
   const [currentPage, setCurrentPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [localUri, setLocalUri] = useState<string | null>(null);
+  const finishedRef = React.useRef(false);
+  const atEnd = totalPages > 0 && currentPage >= totalPages;
 
   React.useEffect(() => {
     if (!url || typeof url !== 'string') return;
@@ -55,7 +57,7 @@ export default function BookReaderScreen() {
   }, [url]);
 
   React.useEffect(() => {
-    if (!contentId || totalPages < 1) return;
+    if (!contentId || totalPages < 1 || finishedRef.current) return;
     rememberContinue({
       id: String(contentId),
       type: 'BOOK',
@@ -153,6 +155,21 @@ export default function BookReaderScreen() {
           />
         )}
       </View>
+      {contentId && atEnd ? (
+        <View style={styles.completeBar}>
+          <TouchableOpacity
+            style={styles.completeButton}
+            activeOpacity={0.85}
+            onPress={async () => {
+              finishedRef.current = true;
+              await completeContinue(String(contentId));
+              router.back();
+            }}
+          >
+            <Text style={styles.completeButtonText}>Mark as completed</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -227,5 +244,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#E53E3E',
     textAlign: 'center',
+  },
+  completeBar: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  completeButton: {
+    backgroundColor: '#0A2540',
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  completeButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
