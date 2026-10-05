@@ -3,7 +3,7 @@ import { upgradeWebSocket } from 'hono/cloudflare-workers';
 import { Bindings } from '../types/env';
 import { retrieveContext } from '../lib/retrieval';
 import { getSystemPrompt } from '../lib/prompts';
-import { feelingFromUser, synthesizeBytes, warmVoice } from '../lib/tts';
+import { feelingFromUser, synthesizeBytes } from '../lib/tts';
 import { updateConversationContext } from '../lib/memory';
 import { shapeConversationalReply, shouldRetrieveKnowledge } from '../lib/speechText';
 import { verifyFirebaseToken } from '../utils/auth';
@@ -123,8 +123,8 @@ function concatBytes(chunks: Uint8Array[]): Uint8Array {
 voice.get('/', upgradeWebSocket((c) => {
   let sessionUserId = '';
   let sessionLang = 'hi';
-  let voiceWarmed = false;
   let sessionAuthed = false;
+  let turn = 0;
   let utteranceOpen = false;
   let audioChunks: Uint8Array[] = [];
   let audioSize = 0;
@@ -168,12 +168,6 @@ voice.get('/', upgradeWebSocket((c) => {
     }
   };
 
-  const warmCurrentVoice = () => {
-    if (voiceWarmed) return;
-    voiceWarmed = true;
-    c.executionCtx.waitUntil(warmVoice(c.env, sessionLang));
-  };
-
   const resetUtterance = () => {
     utteranceOpen = true;
     audioChunks = [];
@@ -210,7 +204,11 @@ voice.get('/', upgradeWebSocket((c) => {
         return;
       }
       ws.send(JSON.stringify({ type: 'transcription', text: transcribedText }));
-      await processTranscription(c, ws, sessionUserId, sessionLang, transcribedText);
+      const myTurn = ++turn;
+      c.executionCtx.waitUntil(
+        processTranscription(c, ws, sessionUserId, sessionLang, transcribedText, () => turn !== myTurn)
+          .catch((err) => console.error('🎙️ [Backend] Reply stopped', err)),
+      );
     } catch (aiErr: any) {
       console.error('🎙️ [Backend] Transcription error:', aiErr);
       ws.send(JSON.stringify({ type: 'error', message: 'Transcription failed. Please try again.' }));
@@ -232,6 +230,10 @@ voice.get('/', upgradeWebSocket((c) => {
         if (!text) return;
         const data = JSON.parse(text);
         if (data.type === 'ping') return;
+        if (data.type === 'cancel') {
+          turn += 1;
+          return;
+        }
 
         if (data.type === 'session_init') {
           if (!sessionAuthed) {
@@ -242,7 +244,6 @@ voice.get('/', upgradeWebSocket((c) => {
           }
           console.log(`🎙️ [Backend] Session ready: user=${sessionUserId}, lang=${sessionLang}`);
           if (sessionAuthed) {
-            warmCurrentVoice();
             ws.send(JSON.stringify({ type: 'session_ready' }));
           }
           return;
@@ -293,7 +294,14 @@ voice.get('/', upgradeWebSocket((c) => {
   };
 }));
 
-async function processTranscription(c: any, ws: any, userId: string, lang: string, transcribedText: string) {
+async function processTranscription(
+  c: any,
+  ws: any,
+  userId: string,
+  lang: string,
+  transcribedText: string,
+  isCancelled: () => boolean = () => false,
+) {
   const cleanUserId = (userId || 'default_user').trim();
   const summaryPromise = c.env.DB.prepare('SELECT currentSummary FROM ChatSession WHERE userId = ?')
     .bind(cleanUserId)
@@ -313,65 +321,68 @@ async function processTranscription(c: any, ws: any, userId: string, lang: strin
   const currentSummary = (results[0] as any)?.currentSummary || 'No previous context.';
   const systemPrompt = getSystemPrompt(context, currentSummary, lang, 'voice', transcribedText);
 
+  if (isCancelled()) return;
   console.log('🎙️ [Backend] Requesting AI response (Llama 3.1)...');
   const aiStream: any = await withTimeout(c.env.AI.run('@cf/meta/llama-3.1-8b-instruct-fp8', {
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: transcribedText },
     ],
-    max_tokens: 180,
+    max_tokens: 1024,
     stream: true,
-  }), 20_000, 'Voice model');
+  }), 45_000, 'Voice model');
+  if (isCancelled()) return;
 
   let rawResponse = '';
-  let published = '';
   const decoder = new TextDecoder();
 
-  const replyShape = { maxSentences: 6, maxWords: 120 };
+  const replyShape = { maxSentences: 80, maxWords: 4000 };
   const feeling = feelingFromUser(transcribedText);
 
-  const jobs: Promise<void>[] = [];
-  let handed = 0;
+  let speakChain = Promise.resolve();
+  let spoken = '';
   let clips = 0;
   const queueSentence = (sentence: string) => {
     const index = clips;
     clips += 1;
     console.log(`🎙️ [Backend] Speaking sentence ${index + 1}`);
-    jobs.push((async () => {
-      sendClip(index, sentence, await synthesizeBytes(c.env, sentence, lang, feeling));
-    })());
+    speakChain = speakChain.then(async () => {
+      if (isCancelled()) return;
+      try {
+        const audio = await synthesizeBytes(c.env, sentence, lang, feeling);
+        if (isCancelled()) return;
+        sendClip(index, sentence, audio);
+      } catch (err) {
+        console.error('🎙️ [Backend] Clip failed', err);
+        if (!isCancelled()) sendClip(index, sentence, null);
+      }
+    });
   };
   const drain = (flush: boolean) => {
     const clean = shapeConversationalReply(rawResponse, replyShape);
-    let rest = clean.slice(handed);
-    const limit = replyShape.maxSentences ?? 2;
-    while (clips < limit) {
-      const match = rest.match(/^([\s\S]*?[.?!।])\s*/);
-      if (match && match[1].trim().length > 1) {
-        handed += match[0].length;
-        queueSentence(match[1].trim());
-        rest = clean.slice(handed);
-        continue;
+    let shared = 0;
+    const cursor = Math.min(spoken.length, clean.length);
+    while (shared < cursor && spoken[shared] === clean[shared]) shared += 1;
+    spoken = clean.slice(0, shared).trimEnd();
+    let rest = clean.slice(spoken.length).replace(/^\s+/, '');
+    while (rest.length > 1) {
+      const words = rest.split(/\s+/).filter(Boolean);
+      const sentence = rest.match(/^([\s\S]*?[.?!।])(?:\s+|$)/);
+      const sentenceWords = sentence ? sentence[1].trim().split(/\s+/).filter(Boolean) : [];
+      let count = 0;
+      if (sentenceWords.length >= 2 && sentenceWords.length <= 8) {
+        count = sentenceWords.length;
+      } else if (words.length >= 8 || flush) {
+        count = Math.min(8, words.length);
       }
-      if (flush && rest.trim().length > 1) {
-        handed = clean.length;
-        queueSentence(rest.trim());
-      }
-      break;
+      if (count < 1 || isCancelled()) break;
+      const speak = words.slice(0, count).join(' ');
+      queueSentence(speak);
+      const leftover = words.slice(count).join(' ');
+      spoken = clean.slice(0, clean.length - leftover.length).trimEnd();
+      rest = leftover;
     }
-    return clips >= limit;
-  };
-
-  const publishText = () => {
-    const clean = shapeConversationalReply(rawResponse, replyShape);
-    if (clean.length > published.length && clean.startsWith(published)) {
-      ws.send(JSON.stringify({ type: 'text_stream', text: clean.slice(published.length) }));
-      published = clean;
-    } else if (clean !== published) {
-      ws.send(JSON.stringify({ type: 'text_replace', text: clean }));
-      published = clean;
-    }
-    return clean;
+    return false;
   };
 
   const sendClip = (index: number, text: string, audio: Uint8Array | null) => {
@@ -384,12 +395,11 @@ async function processTranscription(c: any, ws: any, userId: string, lang: strin
       }));
       return;
     }
-    ws.send(JSON.stringify({ type: 'tts_audio', index, skipped: true }));
+    ws.send(JSON.stringify({ type: 'tts_audio', index, text, skipped: true }));
   };
 
-  let replyReady = false;
   for await (const chunk of aiStream) {
-    if (replyReady) break;
+    if (isCancelled()) break;
     const decoded = decoder.decode(chunk as Uint8Array, { stream: true });
     for (const line of decoded.split('\n')) {
       if (!line.startsWith('data: ') || line.includes('[DONE]')) continue;
@@ -397,11 +407,7 @@ async function processTranscription(c: any, ws: any, userId: string, lang: strin
         const data = JSON.parse(line.substring(6));
         if (data.response) {
           rawResponse += data.response;
-          publishText();
-          if (drain(false)) {
-            replyReady = true;
-            break;
-          }
+          drain(false);
         }
       } catch {
         // ignore incomplete JSON chunks
@@ -409,9 +415,11 @@ async function processTranscription(c: any, ws: any, userId: string, lang: strin
     }
   }
 
-  const spokenReply = publishText();
+  if (isCancelled()) return;
+  const spokenReply = shapeConversationalReply(rawResponse, replyShape);
   drain(true);
-  await Promise.all(jobs);
+  await speakChain;
+  if (isCancelled()) return;
   console.log('🎙️ [Backend] Completed sending the spoken reply');
   ws.send(JSON.stringify({ type: 'generation_done' }));
 

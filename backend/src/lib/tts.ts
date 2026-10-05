@@ -35,8 +35,8 @@ export function feelingFromUser(text: string): VoiceFeeling {
 
 function withFeeling(text: string, feeling: VoiceFeeling): { text: string; speed: number } {
   const line = text.replace(/\s+/g, ' ').trim();
-  if (feeling === 'empathetic') return { text: `<sigh> ${line}`, speed: 0.92 };
-  if (feeling === 'encouraging') return { text: `<emphasize>${line}</emphasize>`, speed: 1.04 };
+  if (feeling === 'empathetic') return { text: line, speed: 0.92 };
+  if (feeling === 'encouraging') return { text: line, speed: 1.04 };
   if (feeling === 'joyful') return { text: line, speed: 1.06 };
   return { text: line, speed: 0.97 };
 }
@@ -44,29 +44,35 @@ function withFeeling(text: string, feeling: VoiceFeeling): { text: string; speed
 async function requestHindiVoice(env: Bindings, text: string, speed: number): Promise<Uint8Array | null> {
   const key = env.YOURVOIC_API_KEY;
   if (!key) return null;
-  const response = await fetch('https://yourvoic.com/api/v1/tts/generate', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': key,
-      Authorization: `Bearer ${key}`,
-    },
-    signal: AbortSignal.timeout(8_000),
-    body: JSON.stringify({
-      text,
-      model: 'aura-lite',
-      language: 'hi',
-      voice: 'Deepika',
-      speed,
-      format: 'mp3',
-    }),
-  });
-  if (!response.ok) {
-    console.error('YourVoic Deepika error:', await response.text());
-    return null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await fetch('https://yourvoic.com/api/v1/tts/generate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': key,
+      },
+      signal: AbortSignal.timeout(20_000),
+      body: JSON.stringify({
+        text,
+        model: 'aura-lite',
+        language: 'hi',
+        voice: 'Deepika',
+        speed,
+        format: 'mp3',
+      }),
+    });
+    if (response.ok) {
+      const audio = new Uint8Array(await response.arrayBuffer());
+      if (audio.byteLength > 80) return audio;
+      console.error('YourVoic Deepika returned empty audio');
+      return null;
+    }
+    const detail = await response.text();
+    console.error('YourVoic Deepika error:', response.status, detail);
+    if (response.status !== 429 && response.status < 500) return null;
+    await new Promise((resolve) => setTimeout(resolve, 400));
   }
-  const audio = new Uint8Array(await response.arrayBuffer());
-  return audio.byteLength > 80 ? audio : null;
+  return null;
 }
 
 async function hindiVoice(env: Bindings, text: string, feeling: VoiceFeeling): Promise<Uint8Array | null> {

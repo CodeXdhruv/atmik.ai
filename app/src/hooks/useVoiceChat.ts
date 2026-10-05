@@ -89,8 +89,11 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
     isMeteringEnabled: true,
   });
   const soundQueueRef = useRef<Map<number, { player: AudioPlayer; text: string }>>(new Map());
-  const skippedClipsRef = useRef<Set<number>>(new Set());
+  const skippedClipsRef = useRef<Map<number, string>>(new Map());
+  const clipTextRef = useRef<Map<number, string>>(new Map());
+  const revealedRef = useRef('');
   const nextClipRef = useRef(0);
+  const clipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isPlayingRef = useRef(false);
   const activePlayerRef = useRef<AudioPlayer | null>(null);
   const generationDoneRef = useRef(false);
@@ -98,7 +101,11 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
   const hasSpokenRef = useRef(false);
   const stoppingRef = useRef(false);
   const capturingRef = useRef(false);
+  const recordingRef = useRef(false);
+  const startTaskRef = useRef<Promise<boolean> | null>(null);
+  const preparedRef = useRef(false);
   const pendingClipRef = useRef<{ index: number; text: string } | null>(null);
+  const silencedRef = useRef(false);
 
   // Initialize WebSocket
   const connectingRef = useRef(false);
@@ -169,6 +176,7 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
             setAiText('');
             aiTextRef.current = '';
             setSpokenCaption('');
+            revealedRef.current = '';
             stopAllAudio();
             
             const userMsgId = Date.now().toString();
@@ -180,7 +188,7 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
             ]);
             break;
           case 'text_replace':
-            if (capturingRef.current) break;
+            if (capturingRef.current || silencedRef.current) break;
             aiTextRef.current = data.text || '';
             setAiText(aiTextRef.current);
             setMessages((prev) => {
@@ -195,7 +203,7 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
             });
             break;
           case 'text_stream':
-            if (capturingRef.current) break;
+            if (capturingRef.current || silencedRef.current) break;
             const chunk = data.text || '';
             aiTextRef.current += chunk;
             setAiText(aiTextRef.current);
@@ -223,19 +231,22 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
             }
             break;
           case 'tts_audio':
-            if (capturingRef.current) break;
-            console.log('🗣️ [VoiceChat] Received Audio Response (TTS)', data.index);
+            if (capturingRef.current || silencedRef.current) break;
+            console.log('🗣️ [VoiceChat] Received Audio Response (TTS)', data.index, data.skipped ? 'skipped' : 'audio');
             if (typeof data.index === 'number') {
+              const caption = data.text || '';
+              clipTextRef.current.set(data.index, caption);
               if (data.skipped || !data.audioBase64) {
-                skippedClipsRef.current.add(data.index);
+                skippedClipsRef.current.set(data.index, caption);
               } else {
-                await queueAudioPlayback(data.index, data.audioBase64, data.text || '');
+                await queueAudioPlayback(data.index, data.audioBase64, caption);
               }
+              if (silencedRef.current) break;
               playNextAudio();
             }
             break;
           case 'generation_done':
-            if (capturingRef.current) break;
+            if (capturingRef.current || silencedRef.current) break;
             console.log('🗣️ [VoiceChat] AI Response Generation Done');
             generationDoneRef.current = true;
             setSpokenCaption((caption) => caption || aiTextRef.current);
@@ -289,11 +300,13 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
     });
   }, []);
 
+  const cutOffRef = useRef<() => void>(() => {});
+
   useEffect(() => {
     connectWebSocket();
     return () => {
+      cutOffRef.current();
       wsRef.current?.close();
-      stopAllAudio();
     };
   }, [connectWebSocket]);
 
@@ -323,12 +336,6 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
         if (status.metering > -38) {
           hasSpokenRef.current = true;
           silenceStartRef.current = null;
-        } else if (hasSpokenRef.current && status.metering < -45) {
-          if (silenceStartRef.current === null) {
-            silenceStartRef.current = Date.now();
-          } else if (Date.now() - silenceStartRef.current > 650) {
-            stopRecording();
-          }
         }
       }, 100);
     } else {
@@ -357,20 +364,44 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
       const extension = head.startsWith('RIFF') ? 'wav' : head.startsWith('OggS') ? 'ogg' : 'mp3';
       const uri = `${FileSystem.cacheDirectory}voice_${index}_${Date.now()}.${extension}`;
       await FileSystem.writeAsStringAsync(uri, base64Audio, { encoding: FileSystem.EncodingType.Base64 });
-      const sound = createAudioPlayer(uri);
+      const sound = createAudioPlayer(uri, { updateInterval: 200 });
       soundQueueRef.current.set(index, { player: sound, text: caption });
     } catch (err) {
       console.error("Failed to queue audio", err);
-      skippedClipsRef.current.add(index);
+      skippedClipsRef.current.set(index, caption);
     }
+  };
+
+  const revealClip = (text: string) => {
+    const piece = text.trim();
+    if (!piece) return;
+    const next = revealedRef.current ? `${revealedRef.current} ${piece}` : piece;
+    revealedRef.current = next;
+    aiTextRef.current = next;
+    setAiText(next);
+    setSpokenCaption(piece);
+    setMessages((prev) => {
+      if (prev.length === 0) {
+        return [{ id: Date.now().toString(), sender: 'ai', text: next, isStreaming: true }];
+      }
+      const copy = [...prev];
+      const lastIdx = copy.length - 1;
+      const lastMsg = copy[lastIdx];
+      if (lastMsg && lastMsg.sender === 'ai') {
+        copy[lastIdx] = { ...lastMsg, text: next, isStreaming: true };
+      }
+      return copy;
+    });
   };
 
   const playNextAudio = () => {
     if (isPlayingRef.current) return;
 
     while (skippedClipsRef.current.has(nextClipRef.current)) {
+      const skippedText = skippedClipsRef.current.get(nextClipRef.current) || clipTextRef.current.get(nextClipRef.current) || '';
       skippedClipsRef.current.delete(nextClipRef.current);
       nextClipRef.current += 1;
+      revealClip(skippedText);
     }
 
     const next = soundQueueRef.current.get(nextClipRef.current);
@@ -386,30 +417,68 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
     activePlayerRef.current = player;
     setIsSpeaking(true);
     setIsThinking(false);
-    if (next.text) setSpokenCaption(next.text);
+    revealClip(next.text);
     player.volume = 1;
 
-    let started = false;
-    const startPlayback = () => {
-      if (started) return;
-      started = true;
-      console.log('🗣️ [VoiceChat] Playing clip', index);
-      player.play();
+    let finished = false;
+    const finishClip = () => {
+      if (finished) return;
+      finished = true;
+      if (clipTimerRef.current) {
+        clearTimeout(clipTimerRef.current);
+        clipTimerRef.current = null;
+      }
+      player.remove();
+      if (activePlayerRef.current === player) activePlayerRef.current = null;
+      isPlayingRef.current = false;
+      nextClipRef.current = index + 1;
+      playNextAudio();
     };
+
     player.addListener('playbackStatusUpdate', (status) => {
-      if (status.isLoaded && !started) startPlayback();
-      if (status.isLoaded && status.didJustFinish) {
-        player.remove();
-        if (activePlayerRef.current === player) activePlayerRef.current = null;
-        isPlayingRef.current = false;
-        nextClipRef.current = index + 1;
-        playNextAudio();
+      if (status.didJustFinish || status.error) {
+        finishClip();
+        return;
+      }
+      if (
+        status.isLoaded
+        && status.duration > 0.2
+        && status.currentTime > 0.2
+        && status.currentTime >= status.duration - 0.12
+        && !status.playing
+      ) {
+        finishClip();
       }
     });
-    if (player.currentStatus?.isLoaded) startPlayback();
+
+    const armWatchdog = (ms: number) => {
+      if (clipTimerRef.current) clearTimeout(clipTimerRef.current);
+      clipTimerRef.current = setTimeout(finishClip, ms);
+    };
+    armWatchdog(12000);
+
+    console.log('🗣️ [VoiceChat] Playing clip', index);
+    setAudioModeAsync({
+      allowsRecording: false,
+      playsInSilentMode: true,
+      interruptionMode: 'doNotMix',
+      shouldRouteThroughEarpiece: false,
+    }).then(() => {
+      if (finished || activePlayerRef.current !== player) return;
+      player.play();
+      const duration = player.currentStatus?.duration;
+      if (duration && duration > 0.2) armWatchdog(Math.ceil(duration * 1000) + 700);
+    }).catch((err) => {
+      console.error('🗣️ [VoiceChat] Playback failed', err);
+      finishClip();
+    });
   };
 
   const stopAllAudio = () => {
+    if (clipTimerRef.current) {
+      clearTimeout(clipTimerRef.current);
+      clipTimerRef.current = null;
+    }
     activePlayerRef.current?.remove();
     activePlayerRef.current = null;
     for (const clip of soundQueueRef.current.values()) {
@@ -417,67 +486,105 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
     }
     soundQueueRef.current.clear();
     skippedClipsRef.current.clear();
+    clipTextRef.current.clear();
     nextClipRef.current = 0;
     isPlayingRef.current = false;
     generationDoneRef.current = false;
     setIsSpeaking(false);
   };
 
-  const startRecording = async () => {
-    try {
-      console.log('🗣️ [VoiceChat] startRecording called');
-      capturingRef.current = true;
-      stopAllAudio();
-      setError(null);
-      setTranscription('');
-      setSpokenCaption('');
-      setIsThinking(false);
-      setMicLevel(0);
-      hasSpokenRef.current = false;
-      stoppingRef.current = false;
-      
-      // Auto-reconnect if the connection was dropped
-      if (wsRef.current?.readyState !== WebSocket.OPEN && wsRef.current?.readyState !== WebSocket.CONNECTING) {
-        console.log('🗣️ [VoiceChat] WebSocket dropped, reconnecting...');
-        connectWebSocket();
-      }
-
+  const prepareTaskRef = useRef<Promise<void> | null>(null);
+  const ensureRecorderReady = () => {
+    if (preparedRef.current) return Promise.resolve();
+    if (prepareTaskRef.current) return prepareTaskRef.current;
+    prepareTaskRef.current = (async () => {
       const permResult = await requestRecordingPermissionsAsync();
       if (!permResult.granted) {
-        console.warn('🗣️ [VoiceChat] Microphone permission denied');
-        setError('Microphone permission required. Please allow mic access.');
-        return;
+        throw new Error('permission');
       }
-
       await setAudioModeAsync({
         allowsRecording: true,
         playsInSilentMode: true,
       });
-
       await recorder.prepareToRecordAsync();
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({
-          type: 'utterance_start',
-          lang: langRef.current,
-        }));
-      }
-      recorder.record();
-      setIsRecording(true);
-    } catch (err) {
-      console.error('🗣️ [VoiceChat] Failed to start recording', err);
-      setError('Recording failed');
+      preparedRef.current = true;
+    })().finally(() => {
+      prepareTaskRef.current = null;
+    });
+    return prepareTaskRef.current;
+  };
+
+  useEffect(() => {
+    ensureRecorderReady().catch(() => {});
+  }, []);
+
+  const startRecording = () => {
+    if (recordingRef.current) return;
+    console.log('🗣️ [VoiceChat] startRecording called');
+    silencedRef.current = false;
+    recordingRef.current = true;
+    capturingRef.current = true;
+    stoppingRef.current = false;
+    setIsRecording(true);
+    setError(null);
+    setTranscription('');
+    setSpokenCaption('');
+    setIsThinking(false);
+    setMicLevel(0);
+    hasSpokenRef.current = false;
+    stopAllAudio();
+
+    if (wsRef.current?.readyState !== WebSocket.OPEN && wsRef.current?.readyState !== WebSocket.CONNECTING) {
+      connectWebSocket();
     }
+
+    startTaskRef.current = (async () => {
+      try {
+        await ensureRecorderReady();
+        if (!recordingRef.current) return false;
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({
+            type: 'utterance_start',
+            lang: langRef.current,
+          }));
+        }
+        recorder.record();
+        return true;
+      } catch (err) {
+        console.error('🗣️ [VoiceChat] Failed to start recording', err);
+        recordingRef.current = false;
+        capturingRef.current = false;
+        preparedRef.current = false;
+        setIsRecording(false);
+        setError(err instanceof Error && err.message === 'permission'
+          ? 'Microphone permission required. Please allow mic access.'
+          : 'Recording failed');
+        return false;
+      }
+    })();
   };
 
   const stopRecording = async () => {
-    if (stoppingRef.current) return;
+    if (!recordingRef.current || stoppingRef.current) return;
     stoppingRef.current = true;
     console.log('🗣️ [VoiceChat] stopRecording called');
+    const started = await (startTaskRef.current ?? Promise.resolve(false));
+    startTaskRef.current = null;
+    recordingRef.current = false;
     capturingRef.current = false;
     setIsRecording(false);
     setMicLevel(0);
+    if (!started) {
+      stoppingRef.current = false;
+      return;
+    }
     try {
+      const status = recorder.getStatus();
       await recorder.stop();
+      preparedRef.current = false;
+      ensureRecorderReady().catch(() => {
+        preparedRef.current = false;
+      });
       await setAudioModeAsync({
         allowsRecording: false,
         playsInSilentMode: true,
@@ -486,8 +593,13 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
       });
       const uri = recorder.uri;
       const ws = wsRef.current;
+      const tooShort = typeof status.durationMillis === 'number' && status.durationMillis > 0 && status.durationMillis < 350;
 
-      console.log('🗣️ [VoiceChat] Recording stopped. URI:', uri);
+      if (tooShort) {
+        setError('Hold the mic while you speak, then release.');
+        setIsThinking(false);
+        return;
+      }
 
       if (uri && ws?.readyState === WebSocket.OPEN) {
         setIsThinking(true);
@@ -498,7 +610,7 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
           audioBase64: base64,
         }));
       } else if (uri) {
-        setError('Voice connection dropped. Tap the mic to try again.');
+        setError('Voice connection dropped. Hold the mic to try again.');
         setIsThinking(false);
       }
     } catch (err) {
@@ -509,6 +621,28 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
       stoppingRef.current = false;
     }
   };
+
+  const cutOff = () => {
+    silencedRef.current = true;
+    recordingRef.current = false;
+    capturingRef.current = false;
+    setIsRecording(false);
+    setIsSpeaking(false);
+    setIsThinking(false);
+    setMicLevel(0);
+    stopAllAudio();
+    try {
+      if (recorder.getStatus().isRecording) {
+        recorder.stop().catch(() => {});
+      }
+    } catch {
+      // The recorder may not be prepared yet.
+    }
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'cancel' }));
+    }
+  };
+  cutOffRef.current = cutOff;
 
   return {
     isConnected,
@@ -524,6 +658,7 @@ export function useVoiceChat(userId: string, lang: string = 'hi') {
     error,
     startRecording,
     stopRecording,
+    cutOff,
     reconnect: connectWebSocket,
   };
 }

@@ -14,6 +14,7 @@ import {
   GestureHandlerRootView,
   GestureDetector,
   Gesture,
+  Pressable,
 } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -303,7 +304,22 @@ export default function VoiceChatPager({ initialPage = 'chat' }: VoiceChatPagerP
     activeIndex.value = 0;
   };
 
+  const cutOffVoiceRef = useRef(voiceChat.cutOff);
+  cutOffVoiceRef.current = voiceChat.cutOff;
+  const leaveVoice = useCallback(() => {
+    cutOffVoiceRef.current();
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        leaveVoice();
+      };
+    }, [leaveVoice]),
+  );
+
   const goToChat = () => {
+    leaveVoice();
     translateX.value = withSpring(-width, { damping: 22, stiffness: 220, mass: 0.6 });
     activeIndex.value = 1;
   };
@@ -326,6 +342,7 @@ export default function VoiceChatPager({ initialPage = 'chat' }: VoiceChatPagerP
       if (activeIndex.value === 0) {
         // Currently on Voice (translateX near 0). Dragging left (< 0) goes to Chat
         if (event.translationX < -dragThreshold || event.velocityX < -velocityThreshold) {
+          runOnJS(leaveVoice)();
           translateX.value = withSpring(-width, { damping: 22, stiffness: 220, mass: 0.6 }, () => {
             activeIndex.value = 1;
           });
@@ -435,12 +452,12 @@ export default function VoiceChatPager({ initialPage = 'chat' }: VoiceChatPagerP
   const voiceStatus = voiceChat.error
     ? voiceChat.error
     : voiceChat.isRecording
-      ? 'Listening'
+      ? 'Voice is being registered'
       : voiceChat.isSpeaking
         ? 'Speaking'
         : voiceChat.isThinking
           ? 'One moment'
-          : 'Tap mic to speak';
+          : 'Hold the mic and speak';
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: BG }}>
@@ -503,8 +520,8 @@ export default function VoiceChatPager({ initialPage = 'chat' }: VoiceChatPagerP
                 {voiceChat.transcription ? (
                   <Text style={styles.voiceUserCaption} numberOfLines={2}>{voiceChat.transcription}</Text>
                 ) : null}
-                {voiceChat.spokenCaption ? (
-                  <Text style={styles.voiceAiCaption} numberOfLines={3}>{voiceChat.spokenCaption}</Text>
+                {voiceChat.aiText || voiceChat.spokenCaption ? (
+                  <Text style={styles.voiceAiCaption}>{voiceChat.aiText || voiceChat.spokenCaption}</Text>
                 ) : null}
               </View>
 
@@ -512,7 +529,7 @@ export default function VoiceChatPager({ initialPage = 'chat' }: VoiceChatPagerP
                 <Text style={[styles.listeningText, voiceChat.error ? { color: '#A33B3B' } : null]} numberOfLines={2}>
                   {voiceStatus}
                 </Text>
-                {voiceChat.isRecording && <Text style={styles.tapToStopText}>Tap mic to send</Text>}
+                {voiceChat.isRecording && <Text style={styles.tapToStopText}>Release to send</Text>}
 
                 <TouchableOpacity style={styles.swipeHint} onPress={goToChat} activeOpacity={0.7}>
                   <Info size={12} color={GOLD} />
@@ -527,13 +544,14 @@ export default function VoiceChatPager({ initialPage = 'chat' }: VoiceChatPagerP
                 </TouchableOpacity>
 
                 <View style={styles.micCenterContainer}>
-                  <Animated.View style={[styles.micPulseRing, animatedMic]} />
-                  <TouchableOpacity
-                    style={styles.micButton}
-                    onPress={() => voiceChat.isRecording ? voiceChat.stopRecording() : voiceChat.startRecording()}
+                  <Animated.View style={[styles.micPulseRing, voiceChat.isRecording && styles.micPulseRingRecording, animatedMic]} />
+                  <Pressable
+                    style={[styles.micButton, voiceChat.isRecording && styles.micButtonRecording]}
+                    onPressIn={voiceChat.startRecording}
+                    onPressOut={voiceChat.stopRecording}
                   >
                     <Mic color="#FFF" size={32} strokeWidth={1.5} />
-                  </TouchableOpacity>
+                  </Pressable>
                 </View>
 
                 <View style={styles.secondaryButton} />
@@ -997,6 +1015,9 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: GOLD,
   },
+  micPulseRingRecording: {
+    borderColor: "#C0392B",
+  },
   micButton: {
     width: 80,
     height: 80,
@@ -1009,6 +1030,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 24,
     elevation: 8,
+  },
+  micButtonRecording: {
+    backgroundColor: "#C0392B",
+    shadowColor: "#C0392B",
   },
   textSection: {
     alignItems: "center",
