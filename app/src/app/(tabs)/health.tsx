@@ -4,8 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useFocusEffect } from 'expo-router';
 import { Colors, Spacing } from '@/constants/theme';
-import innerJourneyData from '../../../assets/inner_journey.json';
-
 import { 
   LookWithinCard, 
   TalkToAtmikCard, 
@@ -17,9 +15,9 @@ import {
 import { apiService } from '@/services/api';
 
 export default function JourneyScreen() {
-  const [todaysReflectionData, setTodaysReflectionData] = useState<any>(innerJourneyData.todaysReflection[0]);
-  const [lookWithinData, setLookWithinData] = useState<any>(innerJourneyData.lookWithin[0]);
-  const [thoughtData, setThoughtData] = useState<any>(innerJourneyData.thoughtsToCarry[0]);
+  const [todaysReflectionData, setTodaysReflectionData] = useState<any>(null);
+  const [lookWithinData, setLookWithinData] = useState<any>(null);
+  const [thoughtData, setThoughtData] = useState<any>(null);
 
   // Load cached journey instantly on mount (0 ms latency)
   React.useEffect(() => {
@@ -68,7 +66,11 @@ export default function JourneyScreen() {
 
         {/* ── Today's Reflection (Hero) ─────────────────── */}
         <View style={styles.heroSection}>
-          <TodaysReflectionCard data={todaysReflectionData} />
+          {todaysReflectionData ? (
+            <TodaysReflectionCard data={todaysReflectionData} />
+          ) : (
+            <Text style={styles.headerSubtitle}>Today&apos;s practice will appear when it is published.</Text>
+          )}
         </View>
 
         {/* ── A Little Deeper ────────────────────────────── */}
@@ -77,8 +79,8 @@ export default function JourneyScreen() {
           <Text style={styles.sectionSubtitle}>Take a moment. Explore what feels meaningful.</Text>
         </View>
 
-        <LookWithinCard data={lookWithinData} />
-        <ThoughtToCarryCard data={thoughtData} />
+        {lookWithinData ? <LookWithinCard data={lookWithinData} /> : null}
+        {thoughtData ? <ThoughtToCarryCard data={thoughtData} /> : null}
         <TalkToAtmikCard />
 
         {/* ── Your Reflections Preview ──────────────────── */}

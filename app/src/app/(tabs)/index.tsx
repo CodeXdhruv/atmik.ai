@@ -25,6 +25,7 @@ const HeroCarousel = ({ quotes }: { quotes: any[] }) => {
   // Quotes passed via props
 
   useEffect(() => {
+    if (quotes.length === 0) return;
     const interval = setInterval(() => {
       setActiveIndex((prevIndex) => {
         const nextIndex = (prevIndex + 1) % quotes.length;
@@ -247,7 +248,7 @@ export default function HomeScreen() {
         </View>
 
         {/* Daily Inspiration Hero */}
-        <HeroCarousel quotes={currentDailyQuotes.length > 0 ? currentDailyQuotes : [{id:"1", text:"Take a breath", author:"Atmik"}]} />
+        {currentDailyQuotes.length > 0 ? <HeroCarousel quotes={currentDailyQuotes} /> : null}
 
         {/* For You Today */}
         <View style={styles.section}>
