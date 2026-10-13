@@ -7,7 +7,6 @@ import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { Wind, Check, Bookmark, ChevronRight, Library, BookOpen } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Spacing, Radius, Shadows } from '@/constants/theme';
-import forYouData from '../../../assets/for_you_today.json';
 import { apiService } from '../../services/api';
 import { useAppStore } from '../../store/useAppStore';
 
@@ -17,7 +16,7 @@ const CARD_TEXT  = '#1B2D4F';
 const CARD_MUTED = '#8A7E6E';   
 const GOLD       = '#B8954A';   
 const WORD_TEXT  = '#2C4068';   
-const HISTORY_KEY = forYouData.selection.storageKey; // '@atmik/for_you_today/history_v1'
+const HISTORY_KEY = '@atmik/for_you_today/history_v1';
 
 // ── Types ──────────────────────────────────────────────────────
 type MicroExperience = {
@@ -175,7 +174,6 @@ function LetItGoCardComponent({ experienceData }: { experienceData?: any }) {
   // Load experience on mount & reset
   const loadExperience = useCallback(async () => {
     try {
-      // 1. Try fetching today's dynamic item from server API
       const serverForYou = await apiService.fetchTodaysForYou();
       if (serverForYou && serverForYou.question && Array.isArray(serverForYou.releaseOptions) && serverForYou.releaseOptions.length > 0) {
         setExperience(serverForYou as MicroExperience);
@@ -184,36 +182,10 @@ function LetItGoCardComponent({ experienceData }: { experienceData?: any }) {
         contentOpacity.value = withTiming(1, { duration: 600 });
         return;
       }
-
-      // 2. Fallback to local history / JSON assets if server unavailable or empty
-      const historyStr = await AsyncStorage.getItem(HISTORY_KEY);
-      const completedIds: string[] = historyStr ? JSON.parse(historyStr) : [];
-      
-      const experiences = forYouData.experiences as MicroExperience[];
-      const available = experiences.filter(exp => !completedIds.includes(exp.id));
-      
-      let selected: MicroExperience;
-      let selectedIndex: number;
-      
-      if (available.length > 0) {
-        selected = available[0];
-        selectedIndex = experiences.findIndex(e => e.id === selected.id);
-      } else {
-        await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify([]));
-        selected = experiences[0];
-        selectedIndex = 0;
-      }
-
-      setExperience(selected);
-      setExperienceIndex(selectedIndex);
-      setStage('let_go');
-      contentOpacity.value = withTiming(1, { duration: 600 });
+      setExperience(null);
     } catch (error) {
-      const exps = forYouData.experiences as MicroExperience[];
-      setExperience(exps[0]);
-      setExperienceIndex(0);
-      setStage('let_go');
-      contentOpacity.value = withTiming(1, { duration: 600 });
+      console.warn('For You Today is unavailable', error);
+      setExperience(null);
     }
   }, []);
 
@@ -234,7 +206,7 @@ function LetItGoCardComponent({ experienceData }: { experienceData?: any }) {
       const completedIds: string[] = historyStr ? JSON.parse(historyStr) : [];
       
       // Limit history to what's defined in the schema
-      const limit = forYouData.selection.historyLimit || 30;
+      const limit = 30;
       if (!completedIds.includes(id)) {
         const newHistory = [id, ...completedIds].slice(0, limit);
         await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(newHistory));
@@ -334,7 +306,13 @@ function LetItGoCardComponent({ experienceData }: { experienceData?: any }) {
   );
 
   if (!experience) {
-    return <View style={stylesLetItGoCard.container}><View style={stylesLetItGoCard.card} /></View>; // Loading shell
+    return (
+      <View style={stylesLetItGoCard.container}>
+        <View style={stylesLetItGoCard.card}>
+          <Text style={stylesLetItGoCard.instruction}>Today&apos;s moment will appear when it is published.</Text>
+        </View>
+      </View>
+    );
   }
 
   return (
