@@ -64,11 +64,50 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        
+
+      - name: 📋 Rename APK
+        run: |
+          mkdir -p /tmp/release-apk
+          find ../android/app/build/outputs/apk -name "*.apk" | head -1 | xargs -I{} cp {} /tmp/release-apk/atmik-ai.apk
+
+      - name: 🏷 Create Git Tag
+        id: tag
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          TAG="build-$(date +'%Y%m%d')-${SHORT_SHA}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${TAG}" || echo "Tag already exists, skipping."
+          git push origin "${TAG}" || echo "Tag push skipped."
+        working-directory: .
+
+      - name: 🚀 Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "Atmik AI – ${{ steps.tag.outputs.tag }}"
+          body: |
+            ## 📦 Atmik AI Android Build
+
+            **Branch:** `${{ github.ref_name }}`  
+            **Commit:** `${{ github.sha }}`  
+            **Built at:** ${{ github.event.head_commit.timestamp || 'manual trigger' }}
+
+            ### What's in this release
+            ${{ github.event.head_commit.message || 'Manual workflow dispatch build' }}
+
+            ---
+            > ⚠️ This is an automated build. Install only on trusted devices.
+          files: /tmp/release-apk/atmik-ai.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: 🚀 Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: swatantra-ai-release-apk
-          path: app/android/app/build/outputs/apk/**/*.apk
+          name: atmik-ai-apk
+          path: /tmp/release-apk/atmik-ai.apk
           retention-days: 14
-
