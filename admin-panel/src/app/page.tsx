@@ -39,10 +39,17 @@ export default function LoginPage() {
         })
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        await signOut(auth);
+        const serverMsg = data?.error || `Server error (${res.status})`;
+        throw new Error(serverMsg);
+      }
+
       if (data.role !== 'ADMIN') {
         await signOut(auth);
-        throw new Error("Unauthorized: Admin access required.");
+        throw new Error("Access denied: this account does not have admin privileges.");
       }
 
       login({ 

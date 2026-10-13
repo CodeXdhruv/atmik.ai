@@ -27,6 +27,8 @@ app.use('*', cors({
     return origin;
   },
   allowHeaders: ['Content-Type', 'Authorization'],
+  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  credentials: true,
 }));
 
 // Health check
