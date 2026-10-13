@@ -242,7 +242,21 @@ export default function LoginPage() {
       toast.success("Login successful!");
       router.push("/dashboard");
     } catch (err: any) {
-      toast.error(err.message || "Failed to login");
+      // Map Firebase auth error codes to friendly messages
+      const code = err?.code || "";
+      const friendlyMsg =
+        code === "auth/wrong-password" || code === "auth/invalid-credential"
+          ? "Incorrect password. Please try again or use Forgot Password."
+          : code === "auth/user-not-found" || code === "auth/invalid-email"
+          ? "No account found with this email address."
+          : code === "auth/too-many-requests"
+          ? "Too many failed attempts. Account temporarily locked — try again later or reset your password."
+          : code === "auth/user-disabled"
+          ? "This account has been disabled. Contact the super admin."
+          : code === "auth/network-request-failed"
+          ? "Network error. Check your internet connection and try again."
+          : err.message || "Login failed. Please try again.";
+      toast.error(friendlyMsg);
     } finally {
       setLoading(false);
     }
