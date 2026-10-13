@@ -126,6 +126,18 @@ export const apiService = {
   /**
    * Fetch all users from the backend
    */
+  async fetchOverview(): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/overview`, {
+      method: 'GET',
+      headers: await getAuthHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch overview: ${response.statusText}`);
+    }
+    const result = await response.json();
+    return result.data;
+  },
+
   async fetchUsers(): Promise<any[]> {
     const response = await fetch(`${API_BASE_URL}/api/admin/users`, {
       method: 'GET',

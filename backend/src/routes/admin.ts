@@ -13,6 +13,89 @@ admin.use('*', async (c, next) => {
   await next();
 });
 
+admin.get('/overview', async (c) => {
+  try {
+    const now = new Date().toISOString();
+    const since = new Date(Date.now() - 370 * 24 * 60 * 60 * 1000).toISOString();
+    const db = c.env.DB;
+    const count = async (sql: string, ...binds: string[]) => {
+      const row = await db.prepare(sql).bind(...binds).first() as { count: number } | null;
+      return Number(row?.count || 0);
+    };
+    const [
+      readers,
+      liveContent,
+      featured,
+      scheduled,
+      bookmarks,
+      quotes,
+      journeys,
+      chats,
+      categories,
+      types,
+      contentDays,
+      bookmarkDays,
+    ] = await Promise.all([
+      count(`SELECT COUNT(*) AS count FROM User WHERE role = 'USER'`),
+      count(`SELECT COUNT(*) AS count FROM Content WHERE publishAt IS NULL OR publishAt <= ?`, now),
+      count(`SELECT COUNT(*) AS count FROM Content WHERE featured = 1 AND (publishAt IS NULL OR publishAt <= ?)`, now),
+      count(`SELECT COUNT(*) AS count FROM Content WHERE publishAt IS NOT NULL AND publishAt > ?`, now),
+      count(`SELECT COUNT(*) AS count FROM Bookmark`),
+      count(`SELECT COUNT(*) AS count FROM QuotesPool`),
+      count(`SELECT COUNT(*) AS count FROM JourneyPool`),
+      count(`SELECT COUNT(*) AS count FROM ChatSession`),
+      db.prepare(
+        `SELECT COALESCE(NULLIF(category, ''), 'Uncategorized') AS name, COUNT(*) AS count
+         FROM Content
+         WHERE publishAt IS NULL OR publishAt <= ?
+         GROUP BY name
+         ORDER BY count DESC`
+      ).bind(now).all(),
+      db.prepare(
+        `SELECT type AS name, COUNT(*) AS count
+         FROM Content
+         WHERE publishAt IS NULL OR publishAt <= ?
+         GROUP BY type
+         ORDER BY count DESC`
+      ).bind(now).all(),
+      db.prepare(
+        `SELECT substr(createdAt, 1, 10) AS day, COUNT(*) AS count
+         FROM Content
+         WHERE createdAt >= ?
+         GROUP BY day
+         ORDER BY day ASC`
+      ).bind(since).all(),
+      db.prepare(
+        `SELECT substr(createdAt, 1, 10) AS day, COUNT(*) AS count
+         FROM Bookmark
+         WHERE createdAt >= ?
+         GROUP BY day
+         ORDER BY day ASC`
+      ).bind(since).all(),
+    ]);
+
+    return c.json({
+      success: true,
+      data: {
+        readers,
+        liveContent,
+        featured,
+        scheduled,
+        bookmarks,
+        quotes,
+        journeys,
+        chats,
+        categories: categories.results,
+        types: types.results,
+        contentByDay: contentDays.results,
+        bookmarksByDay: bookmarkDays.results,
+      },
+    });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
 // GET /api/admin/users
 // Fetch all users
 admin.get('/users', async (c) => {
