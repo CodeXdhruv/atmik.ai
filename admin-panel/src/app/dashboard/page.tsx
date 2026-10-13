@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAdminStore } from "@/store/adminStore";
+import { apiService } from "@/services/api";
 import { 
   BarChart, 
   Bar, 
@@ -17,20 +18,43 @@ import {
   Cell
 } from "recharts";
 import { 
-  TrendingUp, 
   Activity, 
   Clock, 
   Phone,
-  Calendar,
-  Download,
-  Eye,
   Bookmark
 } from "lucide-react";
+
+type DayCount = { day: string; count: number };
+type Overview = {
+  readers: number;
+  liveContent: number;
+  featured: number;
+  scheduled: number;
+  bookmarks: number;
+  quotes: number;
+  journeys: number;
+  chats: number;
+  categories: { name: string; count: number }[];
+  types: { name: string; count: number }[];
+  contentByDay: DayCount[];
+  bookmarksByDay: DayCount[];
+};
+
+function dayKey(date: Date) {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function countOn(rows: DayCount[] | undefined, day: string) {
+  return Number(rows?.find((row) => row.day === day)?.count || 0);
+}
 
 export default function AnalyticsPage() {
   const { currentAdmin } = useAdminStore();
   const [greeting, setGreeting] = useState("Good Morning");
   const [timeRange, setTimeRange] = useState("Weekly");
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     const hour = new Date().getHours();
@@ -39,47 +63,70 @@ export default function AnalyticsPage() {
     else setGreeting("Good Evening");
   }, []);
 
-  // Summary Metrics
+  useEffect(() => {
+    let active = true;
+    apiService.fetchOverview()
+      .then((data) => {
+        if (active) setOverview(data);
+      })
+      .catch(() => {
+        if (active) setLoadError("Live numbers could not be loaded.");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const summaryMetrics = [
-    { name: "Avg. Completion Rate", value: "84.2%", desc: "Chapter completion in Books", icon: Activity, trend: "+3.4% vs last month" },
-    { name: "Weekly Growth", value: "+12.8%", desc: "New registered mobile readers", icon: TrendingUp, trend: "Consistent upward path" },
-    { name: "Session Duration", value: "18.5 mins", desc: "Average app usage duration", icon: Clock, trend: "+1.2m this week" },
-    { name: "Active Mobile Users", value: "24.2K", desc: "Active in the last 24h", icon: Phone, trend: "Peak user concurrency" }
+    { name: "Registered readers", value: overview ? String(overview.readers) : "—", desc: "Accounts in the live app", icon: Phone, trend: "Excludes admin accounts" },
+    { name: "Live library", value: overview ? String(overview.liveContent) : "—", desc: "Books and articles visible now", icon: Activity, trend: overview ? `${overview.featured} featured` : "From the content library" },
+    { name: "Saved bookmarks", value: overview ? String(overview.bookmarks) : "—", desc: "Items readers have saved", icon: Bookmark, trend: overview ? `${overview.quotes} quotes in the pool` : "From reader bookmarks" },
+    { name: "Conversations", value: overview ? String(overview.chats) : "—", desc: "Chat sessions on record", icon: Clock, trend: overview ? `${overview.journeys} journey entries` : "From voice and chat" },
   ];
 
-  // Mock growth trend data
-  const growthTrendData = [
-    { name: "Mon", Views: 3200, Downloads: 1200 },
-    { name: "Tue", Views: 4100, Downloads: 1900 },
-    { name: "Wed", Views: 3800, Downloads: 1500 },
-    { name: "Thu", Views: 5100, Downloads: 2200 },
-    { name: "Fri", Views: 4900, Downloads: 2500 },
-    { name: "Sat", Views: 6200, Downloads: 3100 },
-    { name: "Sun", Views: 7500, Downloads: 3900 }
-  ];
+  const growthTrendData = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (timeRange === "Yearly") {
+      return Array.from({ length: 12 }, (_, index) => {
+        const month = new Date(today.getFullYear(), today.getMonth() - (11 - index), 1);
+        const prefix = dayKey(month).slice(0, 7);
+        const sum = (rows?: DayCount[]) => (rows || []).reduce((total, row) => row.day.startsWith(prefix) ? total + Number(row.count) : total, 0);
+        return {
+          name: month.toLocaleDateString("en-US", { month: "short" }),
+          Published: sum(overview?.contentByDay),
+          Bookmarks: sum(overview?.bookmarksByDay),
+        };
+      });
+    }
+    const days = timeRange === "Monthly" ? 30 : 7;
+    return Array.from({ length: days }, (_, index) => {
+      const date = new Date(today);
+      date.setDate(today.getDate() - (days - 1 - index));
+      const key = dayKey(date);
+      return {
+        name: timeRange === "Weekly"
+          ? date.toLocaleDateString("en-US", { weekday: "short" })
+          : date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        Published: countOn(overview?.contentByDay, key),
+        Bookmarks: countOn(overview?.bookmarksByDay, key),
+      };
+    });
+  }, [overview, timeRange]);
 
-  // Popular categories bar chart data
-  const categoryData = [
-    { name: "Spirituality", count: 18400 },
-    { name: "Meditation", count: 12100 },
-    { name: "Wisdom", count: 9400 },
-    { name: "Mindfulness", count: 6200 },
-    { name: "Life Balance", count: 4800 }
-  ];
-
-  // Popular tags data
-  const tagData = [
-    { name: "Wisdom", count: 980 },
-    { name: "Soul", count: 850 },
-    { name: "Awakening", count: 720 },
-    { name: "Science", count: 540 },
-    { name: "Karma", count: 410 }
-  ];
-
+  const categoryData = overview?.categories?.length ? overview.categories : [{ name: "None yet", count: 0 }];
+  const typeData = overview?.types?.length ? overview.types : [{ name: "None yet", count: 0 }];
+  const live = overview?.liveContent || 0;
+  const scheduled = overview?.scheduled || 0;
+  const libraryTotal = live + scheduled;
+  const liveShare = libraryTotal === 0 ? 0 : Math.round((live / libraryTotal) * 100);
   const completionData = [
-    { name: "Completed", value: 84, color: "#24385A" },
-    { name: "Dropped", value: 16, color: "#E8EDF4" }
-  ];
+    live > 0 ? { name: "Live", value: live, color: "#24385A" } : null,
+    scheduled > 0 ? { name: "Scheduled", value: scheduled, color: "#E8EDF4" } : null,
+  ].filter((entry): entry is { name: string; value: number; color: string } => entry !== null);
+  if (completionData.length === 0) {
+    completionData.push({ name: "Empty", value: 1, color: "#E8EDF4" });
+  }
 
   return (
     <div className="space-y-8 select-none font-ui">
@@ -159,8 +206,8 @@ export default function AnalyticsPage() {
         <div className="lg:col-span-2 bg-white border border-border-custom rounded-card p-6 shadow-soft flex flex-col justify-between">
           <div className="mb-6 flex justify-between items-start">
             <div>
-              <h4 className="font-heading text-lg font-bold text-primary-navy">Views & Downloads Growth</h4>
-              <p className="text-[10px] text-primary-navy/40 font-light mt-0.5">Comparing app hits against asset downloads</p>
+              <h4 className="font-heading text-lg font-bold text-primary-navy">Library & Bookmarks</h4>
+              <p className="text-[10px] text-primary-navy/40 font-light mt-0.5">{loadError || "Items published and bookmarks saved in the live app"}</p>
             </div>
           </div>
 
@@ -197,8 +244,8 @@ export default function AnalyticsPage() {
                     boxShadow: "0 8px 30px rgba(0,0,0,.04)" 
                   }}
                 />
-                <Area type="monotone" dataKey="Views" stroke="#24385A" strokeWidth={2} fillOpacity={1} fill="url(#colorViews)" />
-                <Area type="monotone" dataKey="Downloads" stroke="#D6A04A" strokeWidth={2} fillOpacity={1} fill="url(#colorDownloads)" />
+                <Area type="monotone" dataKey="Published" stroke="#24385A" strokeWidth={2} fillOpacity={1} fill="url(#colorViews)" />
+                <Area type="monotone" dataKey="Bookmarks" stroke="#D6A04A" strokeWidth={2} fillOpacity={1} fill="url(#colorDownloads)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -207,8 +254,8 @@ export default function AnalyticsPage() {
         {/* Completion Gauge donut (1 col) */}
         <div className="bg-white border border-border-custom rounded-card p-6 shadow-soft flex flex-col justify-between">
           <div>
-            <h4 className="font-heading text-lg font-bold text-primary-navy">Book Reads Completion</h4>
-            <p className="text-[10px] text-primary-navy/40 font-light mt-0.5">Average readers completing books to the last chapter</p>
+            <h4 className="font-heading text-lg font-bold text-primary-navy">Library availability</h4>
+            <p className="text-[10px] text-primary-navy/40 font-light mt-0.5">Items readers can open now, against items still scheduled</p>
 
             <div className="h-[180px] w-full mt-4 flex items-center justify-center relative">
               <ResponsiveContainer width="100%" height="100%">
@@ -230,8 +277,8 @@ export default function AnalyticsPage() {
               </ResponsiveContainer>
               
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-2xl font-bold text-primary-navy">84%</span>
-                <span className="text-[9px] uppercase tracking-wider text-primary-navy/40 font-semibold mt-0.5">Completion</span>
+                <span className="text-2xl font-bold text-primary-navy">{libraryTotal === 0 ? "0" : `${liveShare}%`}</span>
+                <span className="text-[9px] uppercase tracking-wider text-primary-navy/40 font-semibold mt-0.5">Live</span>
               </div>
             </div>
           </div>
@@ -240,16 +287,16 @@ export default function AnalyticsPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-primary-navy" />
-                <span>Readers Completing books</span>
+                <span>Live in the app</span>
               </div>
-              <span className="font-semibold text-primary-navy">84%</span>
+              <span className="font-semibold text-primary-navy">{live}</span>
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-border-custom" />
-                <span>Dropped within first 3 chapters</span>
+                <span>Scheduled for later</span>
               </div>
-              <span className="font-semibold text-primary-navy/40">16%</span>
+              <span className="font-semibold text-primary-navy/40">{scheduled}</span>
             </div>
           </div>
         </div>
@@ -260,7 +307,7 @@ export default function AnalyticsPage() {
         
         {/* Popular Categories */}
         <div className="bg-white border border-border-custom rounded-card p-6 shadow-soft">
-          <h4 className="font-heading text-lg font-bold text-primary-navy mb-4">Views by Category</h4>
+          <h4 className="font-heading text-lg font-bold text-primary-navy mb-4">Library by category</h4>
           <div className="h-[240px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={categoryData} layout="vertical" margin={{ left: 10, right: 10, top: 5, bottom: 5 }}>
@@ -288,10 +335,10 @@ export default function AnalyticsPage() {
 
         {/* Popular Tags */}
         <div className="bg-white border border-border-custom rounded-card p-6 shadow-soft">
-          <h4 className="font-heading text-lg font-bold text-primary-navy mb-4">Tag References Usage</h4>
+          <h4 className="font-heading text-lg font-bold text-primary-navy mb-4">Library by type</h4>
           <div className="h-[240px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={tagData} margin={{ left: -10, right: 10, top: 5, bottom: 5 }}>
+              <BarChart data={typeData} margin={{ left: -10, right: 10, top: 5, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F1F4F9" vertical={false} />
                 <XAxis 
                   dataKey="name" 
