@@ -104,7 +104,7 @@ export default function LoginPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@atmik.ai"
+                placeholder="admin@gmail.com"
                 className="w-full pl-11 pr-4 py-3.5 bg-background border border-border-custom rounded-input text-sm font-semibold text-primary-navy placeholder-primary-navy/40 focus:border-accent-gold/40 outline-none transition-colors font-ui"
               />
             </div>
