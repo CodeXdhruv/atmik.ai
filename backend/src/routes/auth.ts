@@ -17,24 +17,40 @@ auth.post('/sync', async (c) => {
       ? payload.email
       : `${firebaseUid}@app.local`;
 
+    // Primary lookup: by firebaseUid (fast path)
     const { results } = await c.env.DB.prepare('SELECT id, role FROM User WHERE firebaseUid = ?')
       .bind(firebaseUid)
       .all();
 
-    if (results.length === 0) {
-      const id = crypto.randomUUID();
-      const role = 'USER';
-
-      await c.env.DB.prepare(
-        'INSERT INTO User (id, firebaseUid, email, role) VALUES (?, ?, ?, ?)'
-      )
-        .bind(id, firebaseUid, email, role)
-        .run();
-
-      return c.json({ success: true, message: 'User created in D1', id, role }, 201);
+    if (results.length > 0) {
+      return c.json({ success: true, message: 'User already exists', id: results[0].id, role: results[0].role }, 200);
     }
 
-    return c.json({ success: true, message: 'User already exists', id: results[0].id, role: results[0].role }, 200);
+    // Fallback: look up by email — handles account re-creation / UID change.
+    // If a row exists with this email, update its firebaseUid so the user
+    // keeps their existing role (e.g. ADMIN) rather than getting a new USER row.
+    const emailRow = await c.env.DB.prepare('SELECT id, role FROM User WHERE email = ?')
+      .bind(email)
+      .first() as { id: string; role: string } | null;
+
+    if (emailRow) {
+      await c.env.DB.prepare('UPDATE User SET firebaseUid = ? WHERE id = ?')
+        .bind(firebaseUid, emailRow.id)
+        .run();
+      return c.json({ success: true, message: 'User UID updated', id: emailRow.id, role: emailRow.role }, 200);
+    }
+
+    // New user — create with default USER role
+    const id = crypto.randomUUID();
+    const role = 'USER';
+
+    await c.env.DB.prepare(
+      'INSERT INTO User (id, firebaseUid, email, role) VALUES (?, ?, ?, ?)'
+    )
+      .bind(id, firebaseUid, email, role)
+      .run();
+
+    return c.json({ success: true, message: 'User created in D1', id, role }, 201);
   } catch (error) {
     console.error('Auth sync failed', error);
     return c.json({ error: 'Could not sync account' }, 500);
