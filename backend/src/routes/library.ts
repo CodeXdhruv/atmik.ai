@@ -5,6 +5,39 @@ import { assertAdmin, authenticate } from '../utils/auth';
 import { isFuturePublish, notifyContentPublished, notifyContentUpdated } from '../lib/publishContent';
 
 const library = new Hono<{ Bindings: Bindings, Variables: { user: any } }>();
+const MAX_VIDEO_BYTES = 15 * 1024 * 1024;
+const CONTENT_STATUSES = new Set(['DRAFT', 'PUBLISHED', 'ARCHIVED']);
+
+function normalizeStatus(status: unknown): string | null {
+  const normalized = typeof status === 'string' ? status.trim().toUpperCase() : 'PUBLISHED';
+  return CONTENT_STATUSES.has(normalized) ? normalized : null;
+}
+
+function isVideoFile(file: File): boolean {
+  return file.type.toLowerCase().startsWith('video/') || /\.(mp4|mov|mkv|webm|m4v)$/i.test(file.name);
+}
+
+function youtubeIdFromUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/^www\./, '');
+    if (host === 'youtu.be') return url.pathname.slice(1).match(/^[A-Za-z0-9_-]{11}$/)?.[0] || null;
+    if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtube-nocookie.com') {
+      const id = url.searchParams.get('v') || url.pathname.match(/^\/(?:embed|shorts)\/([A-Za-z0-9_-]{11})/)?.[1];
+      return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function normalizeTags(value: unknown): string | null {
+  if (value === undefined || value === null) return '[]';
+  if (!Array.isArray(value) || value.some((tag) => typeof tag !== 'string')) return null;
+  return JSON.stringify([...new Set(value.map((tag: string) => tag.trim()).filter(Boolean))]);
+}
 
 // Auth middleware
 library.use('*', async (c, next) => {
@@ -43,7 +76,11 @@ library.post('/upload', async (c) => {
     }
     
     const fileObj = file as File;
-    const fileKey = `${crypto.randomUUID()}-${fileObj.name}`;
+    if (isVideoFile(fileObj) && fileObj.size > MAX_VIDEO_BYTES) {
+      return c.json({ error: 'Video files must be 15 MB or smaller' }, 413);
+    }
+    const safeName = fileObj.name.split(/[\\/]/).pop()?.replace(/[^A-Za-z0-9._-]/g, '_') || 'upload';
+    const fileKey = `${crypto.randomUUID()}-${safeName}`;
     
     // Upload directly using the R2 binding
     await c.env.R2.put(fileKey, await file.arrayBuffer(), {
@@ -68,7 +105,13 @@ library.post('/upload', async (c) => {
 // Serves files from R2
 library.get('/file/:fileKey', async (c) => {
   const fileKey = c.req.param('fileKey');
-  const object = await c.env.R2.get(fileKey);
+  const rangeHeader = c.req.header('Range');
+  const requestedRange = rangeHeader?.match(/^bytes=(\d*)-(\d*)$/);
+  const object = await c.env.R2.get(fileKey, requestedRange ? {
+    range: requestedRange[1]
+      ? { offset: Number(requestedRange[1]), length: requestedRange[2] ? Number(requestedRange[2]) - Number(requestedRange[1]) + 1 : undefined }
+      : { suffix: Number(requestedRange[2]) }
+  } : undefined);
   
   if (!object) {
     return c.notFound();
@@ -77,7 +120,19 @@ library.get('/file/:fileKey', async (c) => {
   const headers = new Headers();
   object.writeHttpMetadata(headers);
   headers.set('etag', object.httpEtag);
-  
+  headers.set('Accept-Ranges', 'bytes');
+
+  if (requestedRange && object.range) {
+    const range = object.range as { offset?: number; length?: number; suffix?: number };
+    const start = range.offset ?? Math.max(0, object.size - (range.suffix || 0));
+    const length = range.length ?? (object.size - start);
+    const end = Math.min(object.size - 1, start + length - 1);
+    headers.set('Content-Range', `bytes ${start}-${end}/${object.size}`);
+    headers.set('Content-Length', String(end - start + 1));
+    return new Response(object.body, { status: 206, headers });
+  }
+
+  headers.set('Content-Length', String(object.size));
   return new Response(object.body, { headers });
 });
 
@@ -85,20 +140,62 @@ library.get('/file/:fileKey', async (c) => {
 // Saves the uploaded media metadata to D1
 library.post('/content', async (c) => {
   try {
-    const { title, type, coverUrl, fileUrl, description, subtitle, author, readTime, category, featured, publishAt } = await c.req.json();
+    const {
+      title, type, coverUrl, fileUrl, description, subtitle, author, readTime, category,
+      featured, publishAt, status, videoSource, youtubeVideoId, fileName, fileSizeBytes,
+      language, tags
+    } = await c.req.json();
     
     if (!title || !type || !fileUrl) {
       return c.json({ error: 'Missing required fields' }, 400);
+    }
+
+    const normalizedType = String(type).trim().toUpperCase();
+    const normalizedStatus = normalizeStatus(status);
+    const normalizedTags = normalizeTags(tags);
+    if (!normalizedStatus) return c.json({ error: 'Invalid content status' }, 400);
+    if (normalizedTags === null) return c.json({ error: 'Tags must be an array of strings' }, 400);
+
+    let normalizedVideoSource: string | null = null;
+    let normalizedYoutubeId: string | null = null;
+    if (normalizedType === 'VIDEO' && !(normalizedStatus === 'DRAFT' && fileUrl === 'text-only' && !videoSource)) {
+      normalizedVideoSource = String(videoSource || '').trim().toUpperCase();
+      if (normalizedVideoSource === 'YOUTUBE') {
+        normalizedYoutubeId = youtubeIdFromUrl(fileUrl);
+        if (!normalizedYoutubeId && !(normalizedStatus === 'DRAFT' && fileUrl === 'text-only')) {
+          return c.json({ error: 'A valid YouTube video URL is required' }, 400);
+        }
+      } else if (normalizedVideoSource === 'UPLOAD') {
+        if (normalizedStatus !== 'DRAFT' && fileUrl === 'text-only') {
+          return c.json({ error: 'A video file is required before publishing' }, 400);
+        }
+        if (fileSizeBytes !== undefined && (!Number.isSafeInteger(fileSizeBytes) || fileSizeBytes < 0 || fileSizeBytes > MAX_VIDEO_BYTES)) {
+          return c.json({ error: 'Video files must be 15 MB or smaller' }, 413);
+        }
+        normalizedVideoSource = 'UPLOAD';
+      } else {
+        return c.json({ error: 'Video source must be UPLOAD or YOUTUBE' }, 400);
+      }
     }
 
     const id = crypto.randomUUID();
     const createdAt = new Date().toISOString();
 
     await c.env.DB.prepare(
-      'INSERT INTO Content (id, title, type, coverUrl, fileUrl, createdAt, description, subtitle, author, readTime, category, featured, publishAt, publishNotified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).bind(id, title, type, coverUrl || null, fileUrl, createdAt, description || null, subtitle || null, author || null, readTime || null, category || null, featured ? 1 : 0, publishAt || null, isFuturePublish(publishAt) ? 0 : 1).run();
+      `INSERT INTO Content
+       (id, title, type, coverUrl, fileUrl, createdAt, description, subtitle, author, readTime,
+        category, featured, publishAt, publishNotified, status, videoSource, youtubeVideoId,
+        fileName, fileSizeBytes, language, tags)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      id, title.trim(), normalizedType, coverUrl || null, fileUrl, createdAt, description || null,
+      subtitle || null, author || null, readTime || null, category || null, featured ? 1 : 0,
+      publishAt || null, normalizedStatus === 'PUBLISHED' && !isFuturePublish(publishAt) ? 1 : 0,
+      normalizedStatus, normalizedVideoSource, normalizedYoutubeId, fileName || null,
+      Number.isSafeInteger(fileSizeBytes) ? fileSizeBytes : null, language || 'English', normalizedTags
+    ).run();
 
-    if (!isFuturePublish(publishAt)) {
+    if (normalizedStatus === 'PUBLISHED' && !isFuturePublish(publishAt)) {
       try {
         await notifyContentPublished(c.env, title, id);
       } catch (e) {
@@ -117,11 +214,40 @@ library.post('/content', async (c) => {
 library.put('/content/:id', async (c) => {
   try {
     const id = c.req.param('id');
-    const { title, type, coverUrl, fileUrl, description, subtitle, author, readTime, category, featured, publishAt } = await c.req.json();
+    const {
+      title, type, coverUrl, fileUrl, description, subtitle, author, readTime, category,
+      featured, publishAt, status, videoSource, youtubeVideoId, fileName, fileSizeBytes,
+      language, tags
+    } = await c.req.json();
 
     if (!title) {
       return c.json({ error: 'Title is required' }, 400);
     }
+
+    const normalizedStatus = status === undefined ? null : normalizeStatus(status);
+    const normalizedTags = tags === undefined ? null : normalizeTags(tags);
+    if (status !== undefined && !normalizedStatus) return c.json({ error: 'Invalid content status' }, 400);
+    if (tags !== undefined && normalizedTags === null) return c.json({ error: 'Tags must be an array of strings' }, 400);
+    if ((String(type || '').toUpperCase() === 'VIDEO' || videoSource !== undefined) && !(normalizedStatus === 'DRAFT' && fileUrl === 'text-only' && !videoSource)) {
+      const source = String(videoSource || '').trim().toUpperCase();
+      if (source !== 'UPLOAD' && source !== 'YOUTUBE') return c.json({ error: 'Video source must be UPLOAD or YOUTUBE' }, 400);
+      if (source === 'YOUTUBE' && !youtubeIdFromUrl(fileUrl) && !(normalizedStatus === 'DRAFT' && fileUrl === 'text-only')) {
+        return c.json({ error: 'A valid YouTube video URL is required' }, 400);
+      }
+      if (source === 'UPLOAD' && normalizedStatus !== 'DRAFT' && fileUrl === 'text-only') {
+        return c.json({ error: 'A video file is required before publishing' }, 400);
+      }
+      if (source === 'UPLOAD' && fileSizeBytes !== undefined && (!Number.isSafeInteger(fileSizeBytes) || fileSizeBytes < 0 || fileSizeBytes > MAX_VIDEO_BYTES)) {
+        return c.json({ error: 'Video files must be 15 MB or smaller' }, 413);
+      }
+    }
+
+    const current = await c.env.DB.prepare('SELECT status, publishAt FROM Content WHERE id = ?').bind(id).first() as {
+      status: string;
+      publishAt: string | null;
+    } | null;
+    const effectiveStatus = normalizedStatus || current?.status || 'PUBLISHED';
+    const effectivePublishAt = publishAt === undefined ? current?.publishAt : publishAt;
 
     await c.env.DB.prepare(
       `UPDATE Content 
@@ -135,8 +261,15 @@ library.put('/content/:id', async (c) => {
            readTime = COALESCE(?, readTime),
            category = COALESCE(?, category),
            featured = COALESCE(?, featured),
-           publishAt = ?,
-           publishNotified = ?
+           publishAt = CASE WHEN ? = 1 THEN ? ELSE publishAt END,
+           publishNotified = CASE WHEN ? = 1 THEN ? ELSE publishNotified END,
+           status = COALESCE(?, status),
+           videoSource = COALESCE(?, videoSource),
+           youtubeVideoId = COALESCE(?, youtubeVideoId),
+           fileName = COALESCE(?, fileName),
+           fileSizeBytes = COALESCE(?, fileSizeBytes),
+           language = COALESCE(?, language),
+           tags = COALESCE(?, tags)
        WHERE id = ?`
     ).bind(
       title || null,
@@ -149,12 +282,21 @@ library.put('/content/:id', async (c) => {
       readTime || null,
       category || null,
       featured === undefined || featured === null ? null : (featured ? 1 : 0),
+      publishAt === undefined ? 0 : 1,
       publishAt || null,
-      isFuturePublish(publishAt) ? 0 : 1,
+      normalizedStatus || publishAt !== undefined ? 1 : 0,
+      effectiveStatus === 'PUBLISHED' && !isFuturePublish(effectivePublishAt) ? 1 : (normalizedStatus || publishAt !== undefined ? 0 : null),
+      normalizedStatus,
+      videoSource ? String(videoSource).toUpperCase() : null,
+      youtubeVideoId || (String(videoSource || '').toUpperCase() === 'YOUTUBE' ? youtubeIdFromUrl(fileUrl) : null),
+      fileName || null,
+      Number.isSafeInteger(fileSizeBytes) ? fileSizeBytes : null,
+      language || null,
+      normalizedTags,
       id
     ).run();
 
-    if (!isFuturePublish(publishAt)) {
+    if (effectiveStatus === 'PUBLISHED' && !isFuturePublish(effectivePublishAt)) {
       try {
         await notifyContentUpdated(c.env, title, id);
       } catch (e) {
@@ -190,7 +332,9 @@ library.get('/content', async (c) => {
     const { results } = roleRow?.role === 'ADMIN'
       ? await c.env.DB.prepare('SELECT * FROM Content ORDER BY createdAt DESC').all()
       : await c.env.DB.prepare(
-          'SELECT * FROM Content WHERE publishAt IS NULL OR publishAt <= ? ORDER BY createdAt DESC'
+          `SELECT * FROM Content
+           WHERE status = 'PUBLISHED' AND (publishAt IS NULL OR publishAt <= ?)
+           ORDER BY createdAt DESC`
         ).bind(now).all();
     return c.json({ success: true, data: results });
   } catch (error: any) {

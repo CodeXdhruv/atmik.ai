@@ -45,7 +45,7 @@ export async function publishDueContent(env: Bindings) {
   const now = new Date().toISOString();
   const { results } = await env.DB.prepare(
     `SELECT id, title FROM Content
-     WHERE publishAt IS NOT NULL AND publishAt <= ? AND publishNotified = 0`
+      WHERE status = 'PUBLISHED' AND publishAt IS NOT NULL AND publishAt <= ? AND publishNotified = 0`
   ).bind(now).all();
 
   for (const row of results as { id: string; title: string }[]) {

@@ -1,0 +1,9 @@
+ALTER TABLE Content ADD COLUMN status TEXT NOT NULL DEFAULT 'PUBLISHED';
+ALTER TABLE Content ADD COLUMN videoSource TEXT;
+ALTER TABLE Content ADD COLUMN youtubeVideoId TEXT;
+ALTER TABLE Content ADD COLUMN fileName TEXT;
+ALTER TABLE Content ADD COLUMN fileSizeBytes INTEGER;
+ALTER TABLE Content ADD COLUMN language TEXT NOT NULL DEFAULT 'English';
+ALTER TABLE Content ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';
+
+CREATE INDEX IF NOT EXISTS idx_content_status_publish ON Content(status, publishAt, createdAt);

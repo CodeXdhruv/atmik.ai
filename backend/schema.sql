@@ -22,8 +22,17 @@ CREATE TABLE IF NOT EXISTS Content (
     category TEXT,
     featured INTEGER NOT NULL DEFAULT 0,
     publishAt TEXT,
-    publishNotified INTEGER NOT NULL DEFAULT 1
+    publishNotified INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'PUBLISHED',
+    videoSource TEXT,
+    youtubeVideoId TEXT,
+    fileName TEXT,
+    fileSizeBytes INTEGER,
+    language TEXT NOT NULL DEFAULT 'English',
+    tags TEXT NOT NULL DEFAULT '[]'
 );
+
+CREATE INDEX IF NOT EXISTS idx_content_status_publish ON Content(status, publishAt, createdAt);
 
 CREATE TABLE IF NOT EXISTS Category (
     id TEXT PRIMARY KEY,
