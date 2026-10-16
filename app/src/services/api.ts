@@ -88,9 +88,10 @@ export const apiService = {
    */
   async fetchLibraryContent(): Promise<any[]> {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/library/content`, {
+      const response = await fetch(`${API_BASE_URL}/api/library/content?t=${Date.now()}`, {
         method: 'GET',
         headers: await getAuthHeaders(),
+        cache: 'no-store',
       });
       if (!response.ok) {
         console.error("Failed to fetch library content:", response.status);

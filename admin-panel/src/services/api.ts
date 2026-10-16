@@ -28,7 +28,26 @@ export const apiService = {
   /**
    * Save content metadata to Cloudflare D1 Database
    */
-  async saveContentMetadata(data: { title: string; type: string; coverUrl?: string; fileUrl: string; description?: string; subtitle?: string; author?: string; readTime?: number; category?: string; featured?: boolean; publishAt?: string | null }): Promise<void> {
+  async saveContentMetadata(data: {
+    title: string;
+    type: string;
+    coverUrl?: string;
+    fileUrl: string;
+    description?: string;
+    subtitle?: string;
+    author?: string;
+    readTime?: number;
+    category?: string;
+    featured?: boolean;
+    publishAt?: string | null;
+    status?: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+    videoSource?: 'UPLOAD' | 'YOUTUBE';
+    youtubeVideoId?: string | null;
+    fileName?: string;
+    fileSizeBytes?: number;
+    language?: string;
+    tags?: string[];
+  }): Promise<{ id: string }> {
     const response = await fetch(`${API_BASE_URL}/api/library/content`, {
       method: 'POST',
       headers: await getAuthHeaders(),
@@ -36,14 +55,35 @@ export const apiService = {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to save content metadata: ${response.statusText}`);
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `Failed to save content metadata: ${response.statusText}`);
     }
+    return response.json();
   },
 
   /**
    * Update content metadata in Cloudflare D1 Database
    */
-  async updateContentMetadata(id: string, data: { title: string; type?: string; coverUrl?: string; fileUrl?: string; description?: string; subtitle?: string; author?: string; readTime?: number; category?: string; featured?: boolean; publishAt?: string | null }): Promise<void> {
+  async updateContentMetadata(id: string, data: {
+    title: string;
+    type?: string;
+    coverUrl?: string;
+    fileUrl?: string;
+    description?: string;
+    subtitle?: string;
+    author?: string;
+    readTime?: number;
+    category?: string;
+    featured?: boolean;
+    publishAt?: string | null;
+    status?: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+    videoSource?: 'UPLOAD' | 'YOUTUBE';
+    youtubeVideoId?: string | null;
+    fileName?: string;
+    fileSizeBytes?: number;
+    language?: string;
+    tags?: string[];
+  }): Promise<void> {
     const response = await fetch(`${API_BASE_URL}/api/library/content/${id}`, {
       method: 'PUT',
       headers: await getAuthHeaders(),
@@ -51,7 +91,8 @@ export const apiService = {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to update content metadata: ${response.statusText}`);
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `Failed to update content metadata: ${response.statusText}`);
     }
   },
 

@@ -53,7 +53,7 @@ export default function EditContentPage({ params }: { params: Promise<{ id: stri
 
   // File Upload State
   const [thumbnail, setThumbnail] = useState<{ name: string; size: string; url: string } | undefined>(undefined);
-  const [pdfFile, setPdfFile] = useState<{ name: string; size: string; url: string } | undefined>(undefined);
+  const [pdfFile, setPdfFile] = useState<{ name: string; size: string; sizeBytes?: number; url: string } | undefined>(undefined);
 
   // Initialize form with existing item
   useEffect(() => {
@@ -91,6 +91,7 @@ export default function EditContentPage({ params }: { params: Promise<{ id: stri
         setPdfFile({
           name: existingItem.fileName || existingItem.fileUrl.split("/").pop() || "resource.pdf",
           size: existingItem.fileSize || "Existing File",
+          sizeBytes: existingItem.fileSizeBytes,
           url: existingItem.fileUrl
         });
       }
@@ -144,7 +145,14 @@ export default function EditContentPage({ params }: { params: Promise<{ id: stri
         readTime: 5,
         category,
         featured,
-        publishAt
+        publishAt,
+        status: status.toUpperCase() as "DRAFT" | "PUBLISHED" | "ARCHIVED",
+        language,
+        tags: selectedTags,
+        videoSource: type === "Video" ? existingItem?.videoSource || "UPLOAD" : undefined,
+        youtubeVideoId: type === "Video" ? existingItem?.youtubeVideoId : undefined,
+        fileName: pdfFile?.name,
+        fileSizeBytes: pdfFile?.sizeBytes
       });
 
       updateContentItem(id, {
@@ -162,7 +170,10 @@ export default function EditContentPage({ params }: { params: Promise<{ id: stri
         thumbnail: thumbnail?.url || "",
         fileUrl: pdfFile?.url,
         fileName: pdfFile?.name,
-        fileSize: pdfFile?.size
+        fileSize: pdfFile?.size,
+        fileSizeBytes: pdfFile?.sizeBytes,
+        videoSource: type === "Video" ? existingItem?.videoSource || "UPLOAD" : undefined,
+        youtubeVideoId: type === "Video" ? existingItem?.youtubeVideoId : undefined
       });
 
       toast.success("Content updated successfully & push notification sent!");
@@ -504,7 +515,7 @@ export default function EditContentPage({ params }: { params: Promise<{ id: stri
               value={pdfFile}
               onUploadSuccess={setPdfFile}
               onRemove={() => setPdfFile(undefined)}
-              maxSizeMB={type === "Book" ? 5 : 50}
+              maxSizeMB={type === "Book" ? 5 : type === "Video" ? 15 : 50}
             />
           </div>
 

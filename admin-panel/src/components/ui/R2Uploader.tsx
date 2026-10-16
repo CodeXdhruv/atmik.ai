@@ -9,9 +9,9 @@ import { apiService } from "@/services/api";
 interface R2UploaderProps {
   label: string;
   acceptType: "image" | "pdf" | "audio" | "video";
-  onUploadSuccess: (file: { name: string; size: string; url: string }) => void;
+  onUploadSuccess: (file: { name: string; size: string; sizeBytes: number; url: string }) => void;
   onRemove: () => void;
-  value?: { name: string; size: string; url: string };
+  value?: { name: string; size: string; sizeBytes?: number; url: string };
   maxSizeMB?: number;
 }
 
@@ -70,6 +70,7 @@ export default function R2Uploader({
       onUploadSuccess({
         name: file.name,
         size: sizeStr,
+        sizeBytes: file.size,
         url: publicUrl
       });
     } catch (error: any) {

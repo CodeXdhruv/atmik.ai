@@ -1,7 +1,7 @@
 import { FlashList } from '@shopify/flash-list';
 import { Skeleton } from 'moti/skeleton';
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, DeviceEventEmitter } from 'react-native';
 import { Image, ImageBackground } from 'expo-image';
 import Animated, { FadeInDown, FadeOutUp, Layout } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,7 +11,7 @@ import {
   Users, ArrowRight, Folder, Sparkles, Aperture, Atom, Wind, Droplet, Feather, Flame, Waves, 
   Infinity as InfinityIcon, Network, Layers, Boxes, Orbit, Asterisk, Focus, Zap, Hexagon, 
   Triangle, Circle, Sun, Moon, Heart, Compass, Lightbulb, BookOpen, Smile, Shield, Star, 
-  Flower, Leaf, Globe, Target, Sunrise 
+  Flower, Leaf, Globe, Target, Sunrise, Video
 } from 'lucide-react-native';
 import { Colors, Spacing, Radius, Shadows } from '@/constants/theme';
 import { apiService } from '../../services/api';
@@ -55,6 +55,7 @@ const DEFAULT_CATEGORIES = [
   { id: 'all', label: 'All', icon: LayoutGrid },
   { id: 'book', label: 'Books', icon: Book },
   { id: 'article', label: 'Articles', icon: FileText },
+  { id: 'video', label: 'Videos', icon: Video },
 ];
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -147,6 +148,14 @@ export default function LearnScreen() {
       loadData();
     }, [loadData])
   );
+
+  React.useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener('libraryContentUpdated', (items: any[]) => {
+      setLibraryContent(Array.isArray(items) ? items : []);
+      setIsLoading(false);
+    });
+    return () => subscription.remove();
+  }, []);
 
   React.useEffect(() => {
     const name = Array.isArray(themeParam) ? themeParam[0] : themeParam;
@@ -277,6 +286,19 @@ export default function LearnScreen() {
                               readTime: item.readTime 
                             } 
                           });
+                        } else if (contentType === 'VIDEO') {
+                          router.push({
+                            pathname: '/video' as any,
+                            params: {
+                              id: item.id,
+                              url: item.fileUrl,
+                              title: item.title,
+                              subtitle: item.subtitle || item.description || '',
+                              coverUrl: item.coverUrl || (item as any).thumbnailUrl || (item as any).imageUrl || '',
+                              author: item.author || 'Atmik AI',
+                              isYoutube: String(item.fileUrl || '').includes('youtube.com') || String(item.fileUrl || '').includes('youtu.be') ? 'true' : 'false'
+                            }
+                          });
                         } else {
                           Linking.openURL(item.fileUrl);
                         }
@@ -314,7 +336,7 @@ export default function LearnScreen() {
                           
                           <View style={styles.featuredBottomRow}>
                             <View style={styles.exploreButton}>
-                              <Text style={styles.exploreButtonText}>Explore {item.type === 'BOOK' ? 'Book' : item.type === 'ARTICLE' ? 'Article' : 'Content'}</Text>
+                              <Text style={styles.exploreButtonText}>Explore {item.type === 'BOOK' ? 'Book' : item.type === 'ARTICLE' ? 'Article' : item.type === 'VIDEO' ? 'Video' : 'Content'}</Text>
                               <ArrowRight color="#fff" size={16} style={{ marginLeft: 4 }} />
                             </View>
                             
@@ -359,7 +381,7 @@ export default function LearnScreen() {
           <>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>
-                {activeCategory === 'all' ? 'Curated for You' : activeCategory === 'book' ? 'Books' : 'Articles'}
+                {activeCategory === 'all' ? 'Curated for You' : activeCategory === 'book' ? 'Books' : activeCategory === 'video' ? 'Videos' : 'Articles'}
               </Text>
               <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <Text style={styles.viewAllText}>See all</Text>
@@ -396,6 +418,19 @@ export default function LearnScreen() {
                               coverUrl: item.coverUrl || (item as any).thumbnailUrl || (item as any).imageUrl || '',
                               author: item.author,
                               readTime: item.readTime
+                            }
+                          });
+                        } else if (contentType === 'VIDEO') {
+                          router.push({
+                            pathname: '/video' as any,
+                            params: {
+                              id: item.id,
+                              url: item.fileUrl,
+                              title: item.title,
+                              subtitle: item.subtitle || item.description || '',
+                              coverUrl: item.coverUrl || (item as any).thumbnailUrl || (item as any).imageUrl || '',
+                              author: item.author || 'Atmik AI',
+                              isYoutube: String(item.fileUrl || '').includes('youtube.com') || String(item.fileUrl || '').includes('youtu.be') ? 'true' : 'false'
                             }
                           });
                         } else {
@@ -520,6 +555,19 @@ export default function LearnScreen() {
                               author: item.author, 
                               readTime: item.readTime 
                             } 
+                          });
+                        } else if (contentType === 'VIDEO') {
+                          router.push({
+                            pathname: '/video' as any,
+                            params: {
+                              id: item.id,
+                              url: item.fileUrl,
+                              title: item.title,
+                              subtitle: item.subtitle || item.description || '',
+                              coverUrl: item.coverUrl || (item as any).thumbnailUrl || (item as any).imageUrl || '',
+                              author: item.author || 'Atmik AI',
+                              isYoutube: String(item.fileUrl || '').includes('youtube.com') || String(item.fileUrl || '').includes('youtu.be') ? 'true' : 'false'
+                            }
                           });
                         } else {
                           Linking.openURL(item.fileUrl);

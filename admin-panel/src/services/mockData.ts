@@ -21,6 +21,9 @@ export interface ContentItem {
   fileUrl?: string;
   fileName?: string;
   fileSize?: string;
+  fileSizeBytes?: number;
+  videoSource?: 'UPLOAD' | 'YOUTUBE';
+  youtubeVideoId?: string;
   quoteText?: string;
   description: string;
   seoTitle?: string;

@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { DeviceEventEmitter, Platform } from 'react-native';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import auth from '@react-native-firebase/auth';
 import { useRouter } from 'expo-router';
 import { LocalNotificationService } from '../services/LocalNotificationService';
+import { apiService } from '../services/api';
 
 export function usePushNotifications() {
   const router = useRouter();
@@ -35,6 +36,12 @@ export function usePushNotifications() {
 
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
       setNotification(notification);
+      const data = notification.request.content.data;
+      if (data?.type === 'CONTENT' || data?.type === 'CONTENT_UPDATE') {
+        apiService.fetchLibraryContent()
+          .then(items => DeviceEventEmitter.emit('libraryContentUpdated', items))
+          .catch(error => console.warn('Failed to refresh library after content notification:', error));
+      }
     });
 
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {

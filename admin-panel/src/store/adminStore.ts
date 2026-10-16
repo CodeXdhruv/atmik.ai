@@ -124,18 +124,25 @@ export const useAdminStore = create<AdminState>((set, get) => ({
         slug: item.id, // Or generate slug
         type: item.type,
         author: item.author || 'Dr. Atmik Jain',
-        status: (item.isPublished ? 'Published' : 'Draft') as 'Published' | 'Draft',
+        status: (String(item.status || (item.isPublished ? 'PUBLISHED' : 'DRAFT')).toUpperCase() === 'PUBLISHED'
+          ? 'Published'
+          : String(item.status || '').toUpperCase() === 'ARCHIVED' ? 'Archived' : 'Draft') as ContentItem['status'],
         views: item.views || 0,
         bookmarks: 0,
         downloads: 0,
-        language: 'English',
-        category: 'Uncategorized',
-        tags: [],
+        language: item.language || 'English',
+        category: item.category || 'Uncategorized',
+        tags: Array.isArray(item.tags) ? item.tags : typeof item.tags === 'string' ? (() => { try { return JSON.parse(item.tags); } catch { return []; } })() : [],
         featured: item.featured === true || item.featured === 1 || item.featured === '1',
         publishAt: item.publishAt || null,
         date: new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
         thumbnail: item.coverUrl || '',
         fileUrl: item.fileUrl,
+        fileName: item.fileName || undefined,
+        fileSizeBytes: item.fileSizeBytes || undefined,
+        fileSize: item.fileSizeBytes ? `${(item.fileSizeBytes / (1024 * 1024)).toFixed(1)} MB` : undefined,
+        videoSource: item.videoSource || undefined,
+        youtubeVideoId: item.youtubeVideoId || undefined,
         description: item.description || '',
       }));
       set({ contentList: mapped });

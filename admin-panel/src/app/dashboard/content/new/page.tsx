@@ -23,7 +23,8 @@ import { apiService } from "@/services/api";
 import Link from "next/link";
 import toast, { Toaster } from "react-hot-toast";
 
-type ContentType = 'Book' | 'Article';
+type ContentType = 'Book' | 'Article' | 'Video';
+type VideoSource = 'upload' | 'youtube';
 
 export default function AddContentPage() {
   const router = useRouter();
@@ -31,6 +32,9 @@ export default function AddContentPage() {
 
   // Form State
   const [type, setType] = useState<ContentType>("Book");
+  const [videoSource, setVideoSource] = useState<VideoSource>('upload');
+  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [isFetchingYoutubeMeta, setIsFetchingYoutubeMeta] = useState(false);
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [author, setAuthor] = useState("");
@@ -57,11 +61,55 @@ export default function AddContentPage() {
   // File Upload State
   const [thumbnail, setThumbnail] = useState<{ name: string; size: string; url: string } | undefined>(undefined);
   const [pdfFile, setPdfFile] = useState<{ name: string; size: string; url: string } | undefined>(undefined);
+  const [videoFile, setVideoFile] = useState<{ name: string; size: string; sizeBytes?: number; url: string } | undefined>(undefined);
 
   const contentTypes = [
     { name: "Book" as ContentType, icon: Book },
-    { name: "Article" as ContentType, icon: FileText }
+    { name: "Article" as ContentType, icon: FileText },
+    { name: "Video" as ContentType, icon: Video }
   ];
+
+  const getYoutubeVideoId = (input: string) => {
+    const trimmed = input.trim();
+    if (!trimmed) return null;
+    const match = trimmed.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([A-Za-z0-9_-]{11})/i);
+    return match?.[1] || null;
+  };
+
+  const fetchYoutubeMetadata = async () => {
+    const normalized = youtubeUrl.trim();
+    if (!normalized) {
+      toast.error("Please paste a YouTube URL first.");
+      return;
+    }
+
+    const videoId = getYoutubeVideoId(normalized);
+    if (!videoId) {
+      toast.error("Please enter a valid YouTube URL.");
+      return;
+    }
+
+    try {
+      setIsFetchingYoutubeMeta(true);
+      const response = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(normalized)}&format=json`);
+      if (!response.ok) {
+        throw new Error("Unable to load YouTube metadata.");
+      }
+      const data = await response.json();
+
+      if (!title.trim()) setTitle(data.title || "YouTube Video");
+      if (!subtitle.trim()) setSubtitle(data.author_name || "YouTube publisher");
+      const thumbnailUrl = data.thumbnail_url || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+      setThumbnail({ name: `${videoId}.jpg`, size: "YouTube", url: thumbnailUrl });
+      setYoutubeUrl(normalized);
+      toast.success("YouTube metadata loaded successfully.");
+    } catch (error) {
+      console.error("Failed to load YouTube metadata:", error);
+      toast.error("Could not fetch YouTube metadata from this link.");
+    } finally {
+      setIsFetchingYoutubeMeta(false);
+    }
+  };
 
   const handleSave = async (isDraft: boolean) => {
     if (!title.trim() || !author.trim()) {
@@ -69,9 +117,20 @@ export default function AddContentPage() {
       return;
     }
 
-    if (!isDraft && type === "Book" && !pdfFile?.url) {
+    if (type === "Book" && !isDraft && !pdfFile?.url) {
       toast.error("Please upload the book PDF file.");
       return;
+    }
+
+    if (type === "Video" && !isDraft) {
+      if (videoSource === "upload" && !videoFile?.url) {
+        toast.error("Please upload a video file or switch to YouTube video.");
+        return;
+      }
+      if (videoSource === "youtube" && !youtubeUrl.trim()) {
+        toast.error("Please enter a YouTube URL.");
+        return;
+      }
     }
 
     let publishAt: string | null = null;
@@ -88,25 +147,33 @@ export default function AddContentPage() {
       publishAt = when.toISOString();
     }
 
-    try {
-      // 1. Save to Cloudflare D1
-      if (!isDraft) {
-        await apiService.saveContentMetadata({
-          title,
-          type: type.toUpperCase(), // 'VIDEO', 'DOCUMENT', etc.
-          coverUrl: thumbnail?.url,
-          fileUrl: pdfFile?.url || "text-only",
-          description,
-          subtitle,
-          author,
-          readTime: 5, // Default for now
-          category,
-          featured,
-          publishAt
-        });
-      }
+    const finalFileUrl = type === "Video"
+      ? (videoSource === "youtube" ? youtubeUrl.trim() : videoFile?.url || "")
+      : (pdfFile?.url || "text-only");
+    const selectedStatus = isDraft ? "DRAFT" : status.toUpperCase() as "PUBLISHED" | "ARCHIVED";
 
-      // 2. Local State update (for UI optimism)
+    try {
+      await apiService.saveContentMetadata({
+        title: title.trim(),
+        type: type.toUpperCase(),
+        coverUrl: thumbnail?.url,
+        fileUrl: finalFileUrl || "text-only",
+        description,
+        subtitle,
+        author,
+        readTime: type === "Video" ? 6 : 5,
+        category,
+        featured,
+        publishAt,
+        status: selectedStatus,
+        videoSource: type === "Video" ? videoSource.toUpperCase() as "UPLOAD" | "YOUTUBE" : undefined,
+        youtubeVideoId: type === "Video" && videoSource === "youtube" ? getYoutubeVideoId(youtubeUrl) || undefined : undefined,
+        fileName: type === "Video" ? (videoSource === "upload" ? videoFile?.name : undefined) : pdfFile?.name,
+        fileSizeBytes: type === "Video" && videoSource === "upload" ? videoFile?.sizeBytes : undefined,
+        language,
+        tags: selectedTags
+      });
+
       addContentItem({
         title,
         subtitle,
@@ -122,9 +189,12 @@ export default function AddContentPage() {
         quoteText: type === "Book" ? quoteText : undefined,
         description,
         thumbnail: thumbnail?.url || "/mock/placeholder.jpg",
-        fileUrl: pdfFile?.url,
-        fileName: pdfFile?.name,
-        fileSize: pdfFile?.size
+        fileUrl: finalFileUrl || undefined,
+        fileName: type === "Video" ? (videoSource === "upload" ? videoFile?.name : youtubeUrl) : pdfFile?.name,
+        fileSize: type === "Video" && videoSource === "upload" ? videoFile?.size : undefined,
+        fileSizeBytes: type === "Video" && videoSource === "upload" ? videoFile?.sizeBytes : undefined,
+        videoSource: type === "Video" ? videoSource.toUpperCase() as "UPLOAD" | "YOUTUBE" : undefined,
+        youtubeVideoId: type === "Video" && videoSource === "youtube" ? getYoutubeVideoId(youtubeUrl) || undefined : undefined
       });
 
       toast.success(isDraft ? "Draft saved successfully!" : publishAt ? "Content scheduled." : "Content published successfully to Cloudflare D1!");
@@ -326,6 +396,73 @@ export default function AddContentPage() {
             </div>
           </div>
 
+          {type === "Video" && (
+            <div className="bg-white border border-border-custom rounded-card p-6 shadow-soft space-y-5">
+              <h3 className="text-xs font-semibold text-primary-navy/70 uppercase tracking-wider font-ui border-b border-border-custom/50 pb-2">
+                Video Source
+              </h3>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setVideoSource("upload")}
+                  className={`flex-1 px-3 py-2 rounded-input border text-xs font-semibold transition-colors ${
+                    videoSource === "upload"
+                      ? "bg-primary-navy text-white border-primary-navy"
+                      : "bg-white text-primary-navy border-border-custom"
+                  }`}
+                >
+                  Upload Video
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVideoSource("youtube")}
+                  className={`flex-1 px-3 py-2 rounded-input border text-xs font-semibold transition-colors ${
+                    videoSource === "youtube"
+                      ? "bg-primary-navy text-white border-primary-navy"
+                      : "bg-white text-primary-navy border-border-custom"
+                  }`}
+                >
+                  YouTube Link
+                </button>
+              </div>
+
+              {videoSource === "youtube" ? (
+                <div className="space-y-2">
+                  <label className="text-[10px] font-semibold text-primary-navy/60 uppercase tracking-wider font-ui">
+                    YouTube video URL
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={youtubeUrl}
+                      onChange={(e) => setYoutubeUrl(e.target.value)}
+                      placeholder="https://www.youtube.com/watch?v=..."
+                      className="flex-1 px-4 py-2.5 bg-background border border-border-custom rounded-input text-xs text-primary-navy placeholder-primary-navy/30 focus:border-accent-gold/40 outline-none transition-colors font-ui"
+                    />
+                    <button
+                      type="button"
+                      onClick={fetchYoutubeMetadata}
+                      disabled={isFetchingYoutubeMeta}
+                      className="px-3 py-2.5 rounded-input bg-accent-gold text-primary-navy text-[10px] font-semibold disabled:opacity-60"
+                    >
+                      {isFetchingYoutubeMeta ? "Loading..." : "Fetch"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <R2Uploader
+                  label="Video File *"
+                  acceptType="video"
+                  value={videoFile}
+                  onUploadSuccess={setVideoFile}
+                  onRemove={() => setVideoFile(undefined)}
+                  maxSizeMB={15}
+                />
+              )}
+            </div>
+          )}
+
           {/* Card 3: Publishing Options */}
           <div className="bg-white border border-border-custom rounded-card p-6 shadow-soft space-y-4">
             <h3 className="text-xs font-semibold text-primary-navy/70 uppercase tracking-wider font-ui border-b border-border-custom/50 pb-2">
@@ -455,6 +592,17 @@ export default function AddContentPage() {
                 onUploadSuccess={setPdfFile}
                 onRemove={() => setPdfFile(undefined)}
                 maxSizeMB={5}
+              />
+            )}
+
+            {type === "Video" && videoSource === "upload" && (
+              <R2Uploader
+                label="Video File *"
+                acceptType="video"
+                value={videoFile}
+                onUploadSuccess={setVideoFile}
+                onRemove={() => setVideoFile(undefined)}
+                maxSizeMB={15}
               />
             )}
           </div>

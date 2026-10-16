@@ -6,7 +6,7 @@ const LIMIT = 24;
 
 export type ContinueReading = {
   id: string;
-  type: 'BOOK' | 'ARTICLE';
+  type: 'BOOK' | 'ARTICLE' | 'VIDEO';
   title: string;
   author?: string;
   coverUrl?: string;

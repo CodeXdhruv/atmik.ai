@@ -189,7 +189,7 @@ export default function HomeScreen() {
     return savedReading.map(enrich);
   }, [savedReading, recommendedContent]);
 
-  const openContinue = (continueItem: ContinueReading) => {
+  const openContinue = (continueItem: ContinueReading | any) => {
     const kind = String(continueItem.type || '').toUpperCase();
     if (kind === 'BOOK' && continueItem.fileUrl) {
       router.push({
@@ -199,6 +199,21 @@ export default function HomeScreen() {
           url: continueItem.fileUrl,
           title: continueItem.title,
           page: continueItem.page ? String(continueItem.page) : '1',
+        },
+      });
+      return;
+    }
+    if (kind === 'VIDEO' && continueItem.fileUrl) {
+      router.push({
+        pathname: '/video' as any,
+        params: {
+          id: continueItem.id,
+          url: continueItem.fileUrl,
+          title: continueItem.title,
+          subtitle: continueItem.description || continueItem.title,
+          coverUrl: continueItem.coverUrl || '',
+          author: continueItem.author || 'Atmik AI',
+          isYoutube: String(continueItem.fileUrl).includes('youtube.com') || String(continueItem.fileUrl).includes('youtu.be') ? 'true' : 'false',
         },
       });
       return;
