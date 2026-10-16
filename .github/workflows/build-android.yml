@@ -5,12 +5,20 @@ on:
     branches:
       - main
       - refactor
-  workflow_dispatch: # Allows manual trigger from GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      version_override:
+        description: Optional version override for the APK name (for example 1.2.3)
+        required: false
+        default: ''
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     defaults:
       run:
         working-directory: ./app
@@ -48,14 +56,38 @@ jobs:
           sudo swapon /swapfile
           free -h
 
+      - name: 🧾 Prepare version metadata
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ -n "${{ github.event.inputs.version_override || '' }}" ]; then
+            VERSION="${{ github.event.inputs.version_override }}"
+          fi
+          BUILD_NUMBER="${{ github.run_number }}"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          APK_NAME="atmik-ai-${VERSION}+${BUILD_NUMBER}-${SHORT_SHA}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "build_number=${BUILD_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "apk_name=${APK_NAME}" >> "$GITHUB_OUTPUT"
+          echo "apk_path=/tmp/release-apk/${APK_NAME}.apk" >> "$GITHUB_OUTPUT"
+          echo "Release version: ${VERSION} (build ${BUILD_NUMBER})"
+
       - name: 🔐 Setup Keystore
+        shell: bash
         run: |
           if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
             echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > /tmp/release.keystore
+            cat > android/keystore.properties <<EOF
+          storeFile=/tmp/release.keystore
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          EOF
           else
-            echo "No keystore secret found, skipping."
+            echo "No keystore secret found; build will fall back to debug signing."
           fi
-          
+
       - name: 🔨 Build Android Release APK
         run: cd android && ./gradlew assembleRelease --no-daemon --stacktrace -PreactNativeArchitectures=arm64-v8a
         env:
@@ -65,17 +97,25 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
-      - name: 📋 Rename APK
+      - name: 📋 Locate and rename APK
+        shell: bash
         run: |
           mkdir -p /tmp/release-apk
-          find ../android/app/build/outputs/apk -name "*.apk" | head -1 | xargs -I{} cp {} /tmp/release-apk/atmik-ai.apk
+          APK_PATH=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            echo "No APK was generated in android/app/build/outputs/apk"
+            find android/app/build/outputs -maxdepth 4 -type f | sed -n '1,40p'
+            exit 1
+          fi
+          cp "$APK_PATH" "/tmp/release-apk/${{ steps.version.outputs.apk_name }}.apk"
+          ls -l /tmp/release-apk
 
       - name: 🏷 Create Git Tag
         id: tag
+        shell: bash
         run: |
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          TAG="build-$(date +'%Y%m%d')-${SHORT_SHA}"
-          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          TAG="v${{ steps.version.outputs.version }}-${{ steps.version.outputs.build_number }}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag "${TAG}" || echo "Tag already exists, skipping."
@@ -86,10 +126,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          name: "Atmik AI – ${{ steps.tag.outputs.tag }}"
+          name: "Atmik AI – ${{ steps.version.outputs.version }} (Build ${{ steps.version.outputs.build_number }})"
           body: |
             ## 📦 Atmik AI Android Build
 
+            **Version:** ${{ steps.version.outputs.version }}  
+            **Build number:** ${{ steps.version.outputs.build_number }}  
             **Branch:** `${{ github.ref_name }}`  
             **Commit:** `${{ github.sha }}`  
             **Built at:** ${{ github.event.head_commit.timestamp || 'manual trigger' }}
@@ -99,7 +141,7 @@ jobs:
 
             ---
             > ⚠️ This is an automated build. Install only on trusted devices.
-          files: /tmp/release-apk/atmik-ai.apk
+          files: /tmp/release-apk/${{ steps.version.outputs.apk_name }}.apk
           draft: false
           prerelease: false
         env:
@@ -108,6 +150,6 @@ jobs:
       - name: 🚀 Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: atmik-ai-apk
-          path: /tmp/release-apk/atmik-ai.apk
+          name: atmik-ai-${{ steps.version.outputs.version }}-${{ steps.version.outputs.build_number }}
+          path: /tmp/release-apk/${{ steps.version.outputs.apk_name }}.apk
           retention-days: 14

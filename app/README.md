@@ -1,6 +1,8 @@
-# Welcome to your Expo app 👋
+# Atmik AI Mobile App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+![Android Release Build](https://github.com/CodeXdhruv/Dr.Swatantra-AI/actions/workflows/build-android.yml/badge.svg)
+
+This is the Expo mobile app for Atmik AI.
 
 ## Get started
 
